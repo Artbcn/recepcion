@@ -1,2 +1,0 @@
-# recepcion
-nosotras
