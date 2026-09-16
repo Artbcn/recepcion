@@ -1534,7 +1534,8 @@ function periodLabel(p){
   if (p.type === 'times'){
     const n = (p.months||[]).length;
     if (n >= 12) return '12 veces al año (todos los meses)';
-    return `${n} vez${n===1?'':'es'} al año: ` + (p.months||[]).map(m => MESES_C[m-1]).join(', ');
+    const dias = (p.diaIni && p.diaIni !== 1) || (p.diaFin && p.diaFin !== 31) ? ` (del ${p.diaIni||1} al ${p.diaFin||31})` : '';
+    return `${n} vez${n===1?'':'es'} al año: ` + (p.months||[]).map(m => MESES_C[m-1]).join(', ') + dias;
   }
   if (p.type === 'rolling') return `Cada ${p.months} mes${p.months===1?'':'es'} desde la \u00faltima vez`;
   if (p.type === 'interval') return `Cada ${p.months} mes${p.months===1?'':'es'}`;
@@ -1575,6 +1576,7 @@ function periodEditorHtml(task){
   const monthPickers = (n >= 12) ? '<span style="font-size:12px;color:var(--ink-soft)">(todos los meses)</span>'
     : months.map((m, idx) => monthSelect(task.id, idx, m)).join(' ');
   const dr = { d1: (isDaterange && p.d1) || 1, m1: (isDaterange && p.m1) || 1, d2: (isDaterange && p.d2) || 1, m2: (isDaterange && p.m2) || 1 };
+  const diaIni = (isTimes && p.diaIni) || 1, diaFin = (isTimes && p.diaFin) || 31;
   return `<select class="pe-veces" data-id="${esc(task.id)}" style="border:1px solid var(--line);border-radius:8px;padding:6px">
       <option value="manual"${isManual?' selected':''}>Sin período (manual)</option>
       ${vecesOpts}
@@ -1582,6 +1584,13 @@ function periodEditorHtml(task){
       <option value="daterange"${isDaterange?' selected':''}>Rango de fechas fijo (d\u00eda y mes)</option>
     </select>
     <span class="pe-months-wrap" style="display:${isTimes?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap">${monthPickers}</span>
+    <span class="pe-times-days-wrap" style="display:${isTimes?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap;width:100%;margin-top:4px">
+      <span style="font-size:12px;color:var(--ink-soft)">solo del día</span>
+      ${daySelect('pe-td',task.id,'diaIni',diaIni)}
+      <span style="font-size:12px;color:var(--ink-soft)">al día</span>
+      ${daySelect('pe-td',task.id,'diaFin',diaFin)}
+      <span style="font-size:12px;color:var(--ink-soft)">de cada mes (dejalo en 1 y 31 para todo el mes)</span>
+    </span>
     <span class="pe-rolling-wrap" style="display:${isRolling?'inline-flex':'none'};gap:6px;align-items:center">cada <input type="number" min="1" class="pe-rolling-n" data-id="${esc(task.id)}" value="${isRolling ? (p.months||1) : 1}" style="width:48px;border:1px solid var(--line);border-radius:8px;padding:5px 6px"> mes(es), contados desde que se marca hecha</span>
     <span class="pe-daterange-wrap" style="display:${isDaterange?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap">
       desde ${daySelect('pe-dr',task.id,'d1',dr.d1)} ${monthSelect2('pe-dr',task.id,'m1',dr.m1)}
@@ -1787,6 +1796,11 @@ function wirePeriodPanel(containerId){
     savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
   }));
   box.querySelectorAll('.pe-dr').forEach(sel => sel.addEventListener('change', () => {
+    const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d || !d.period) return;
+    d.period[sel.dataset.field] = parseInt(sel.value);
+    savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
+  }));
+  box.querySelectorAll('.pe-td').forEach(sel => sel.addEventListener('change', () => {
     const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d || !d.period) return;
     d.period[sel.dataset.field] = parseInt(sel.value);
     savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
@@ -2690,9 +2704,12 @@ function periodCurrentWindow(task, day){
   const y = day.getFullYear(); const p = task.period || {};
   if (p.type === 'times' && p.months && p.months.length){
     let best = null;
+    const diaIni = p.diaIni || 1;
     for (const yy of [y, y+1]){
       for (const m of p.months){
-        const start = new Date(yy, m-1, 1), end = new Date(yy, m-1, lastDayOfMonth(yy, m));
+        const ldm = lastDayOfMonth(yy, m);
+        const diaFin = Math.min(p.diaFin || 31, ldm);
+        const start = new Date(yy, m-1, Math.min(diaIni, ldm)), end = new Date(yy, m-1, diaFin);
         if (end >= day && (!best || start < best.start)) best = { key:`${task.id}-${yy}-${pad(m)}`, start, end };
       }
     }
