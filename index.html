@@ -1087,7 +1087,7 @@ function parteSnapshot(){
     pisos: list.map(t => ({
       hab: t.hab, tipo: t.tipo, tipoLbl: (TIPO_LBL[t.tipo] || t.tipo), obs: t.obs,
       huesped: t.huesped, pax: `${t.ac}·${t.ju}·${t.ni}·${t.ini}`,
-      cama: t.cama, coment: t.coment, horaLleg: t.hora, horaSalida: t.horaSalida
+      cama: t.cama, coment: t.coment, horaLleg: t.hora, horaSalida: t.horaSalida, priori: t.priori
     })),
     toallas: towels.map(g => ({ hab: g.hab, huesped: g.huesped, hora: towelHora(g.hab), manual: !!g._manual })),
     clientes: clients.map(c => ({ hab: c.g.hab, huesped: c.g.huesped, hora: c.hora, extra: !!c.extra })),
