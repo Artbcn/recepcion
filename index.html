@@ -1519,6 +1519,7 @@ function periodLabel(p){
   if (p.type === 'rolling') return `Cada ${p.months} mes${p.months===1?'':'es'} desde la \u00faltima vez`;
   if (p.type === 'interval') return `Cada ${p.months} mes${p.months===1?'':'es'}`;
   if (p.type === 'windows') return (p.ranges||[]).map(([a,b]) => a===b ? MESES_C[a-1] : `${MESES_C[a-1]}-${MESES_C[b-1]}`).join(' y ');
+  if (p.type === 'daterange') return `Del ${p.d1} ${MESES_C[p.m1-1]} al ${p.d2} ${MESES_C[p.m2-1]} (todos los años)`;
   if (p.type === 'seasonal_daily') return `Diaria en ${(p.dailyMonths||[]).map(m=>MESES_C[m-1]).join('/')} · mensual el resto`;
   return '—';
 }
@@ -1526,6 +1527,14 @@ const VECES_OPCIONES = [1,2,3,4,6,12];
 function monthSelect(id, idx, val){
   const opts = MESES_C.map((m,i) => `<option value="${i+1}"${(i+1)===val?' selected':''}>${m}</option>`).join('');
   return `<select class="pe-m" data-id="${esc(id)}" data-idx="${idx}" style="border:1px solid var(--line);border-radius:8px;padding:5px 6px">${opts}</select>`;
+}
+function daySelect(cls, id, field, val){
+  const opts = Array.from({length:31}, (_,i)=>i+1).map(d => `<option value="${d}"${d===val?' selected':''}>${d}</option>`).join('');
+  return `<select class="${cls}" data-id="${esc(id)}" data-field="${field}" style="border:1px solid var(--line);border-radius:8px;padding:5px 6px">${opts}</select>`;
+}
+function monthSelect2(cls, id, field, val){
+  const opts = MESES_C.map((m,i) => `<option value="${i+1}"${(i+1)===val?' selected':''}>${m}</option>`).join('');
+  return `<select class="${cls}" data-id="${esc(id)}" data-field="${field}" style="border:1px solid var(--line);border-radius:8px;padding:5px 6px">${opts}</select>`;
 }
 /* reparte N meses lo más espaciados posible a lo largo del año, arrancando en enero */
 function spreadMonths(n){
@@ -1538,19 +1547,26 @@ function periodEditorHtml(task){
   const p = task.period || { type:'manual' };
   const isTimes = p.type === 'times';
   const isRolling = p.type === 'rolling';
-  const isManual = !isTimes && !isRolling;
+  const isDaterange = p.type === 'daterange';
+  const isManual = !isTimes && !isRolling && !isDaterange;
   const months = (isTimes && p.months && p.months.length) ? p.months : [1];
   const n = months.length;
   const vecesOpts = VECES_OPCIONES.map(v => `<option value="${v}"${(isTimes && v===n)?' selected':''}>${v} vez${v===1?'':'es'} al año (mes fijo)</option>`).join('');
   const monthPickers = (n >= 12) ? '<span style="font-size:12px;color:var(--ink-soft)">(todos los meses)</span>'
     : months.map((m, idx) => monthSelect(task.id, idx, m)).join(' ');
+  const dr = { d1: (isDaterange && p.d1) || 1, m1: (isDaterange && p.m1) || 1, d2: (isDaterange && p.d2) || 1, m2: (isDaterange && p.m2) || 1 };
   return `<select class="pe-veces" data-id="${esc(task.id)}" style="border:1px solid var(--line);border-radius:8px;padding:6px">
       <option value="manual"${isManual?' selected':''}>Sin período (manual)</option>
       ${vecesOpts}
       <option value="rolling"${isRolling?' selected':''}>Cada N meses (desde la \u00faltima vez)</option>
+      <option value="daterange"${isDaterange?' selected':''}>Rango de fechas fijo (d\u00eda y mes)</option>
     </select>
     <span class="pe-months-wrap" style="display:${isTimes?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap">${monthPickers}</span>
-    <span class="pe-rolling-wrap" style="display:${isRolling?'inline-flex':'none'};gap:6px;align-items:center">cada <input type="number" min="1" class="pe-rolling-n" data-id="${esc(task.id)}" value="${isRolling ? (p.months||1) : 1}" style="width:48px;border:1px solid var(--line);border-radius:8px;padding:5px 6px"> mes(es), contados desde que se marca hecha</span>`;
+    <span class="pe-rolling-wrap" style="display:${isRolling?'inline-flex':'none'};gap:6px;align-items:center">cada <input type="number" min="1" class="pe-rolling-n" data-id="${esc(task.id)}" value="${isRolling ? (p.months||1) : 1}" style="width:48px;border:1px solid var(--line);border-radius:8px;padding:5px 6px"> mes(es), contados desde que se marca hecha</span>
+    <span class="pe-daterange-wrap" style="display:${isDaterange?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap">
+      desde ${daySelect('pe-dr',task.id,'d1',dr.d1)} ${monthSelect2('pe-dr',task.id,'m1',dr.m1)}
+      hasta ${daySelect('pe-dr',task.id,'d2',dr.d2)} ${monthSelect2('pe-dr',task.id,'m2',dr.m2)}
+    </span>`;
 }
 /* renderiza una pestaña de tareas periódicas (limpieza o mantenimiento+comunes) en su propio contenedor */
 function renderPeriodPanel(cats, containerId){
@@ -1746,7 +1762,13 @@ function wirePeriodPanel(containerId){
     const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d) return;
     if (sel.value === 'manual'){ d.period = { type:'manual' }; }
     else if (sel.value === 'rolling'){ d.period = { type:'rolling', months: 1 }; }
+    else if (sel.value === 'daterange'){ d.period = { type:'daterange', d1:1, m1:1, d2:1, m2:2 }; }
     else { const n = parseInt(sel.value); d.period = { type:'times', months: spreadMonths(n) }; }
+    savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
+  }));
+  box.querySelectorAll('.pe-dr').forEach(sel => sel.addEventListener('change', () => {
+    const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d || !d.period) return;
+    d.period[sel.dataset.field] = parseInt(sel.value);
     savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
   }));
   box.querySelectorAll('.pe-m').forEach(sel => sel.addEventListener('change', () => {
@@ -2663,6 +2685,16 @@ function periodCurrentWindow(task, day){
         const start = new Date(yy, m1-1, 1), end = new Date(yy, m2-1, lastDayOfMonth(yy, m2));
         if (end >= day && (!best || start < best.start)) best = { key:`${task.id}-${yy}-${pad(m1)}${pad(m2)}`, start, end };
       }
+    }
+    return best;
+  }
+  if (p.type === 'daterange' && p.d1 && p.m1 && p.d2 && p.m2){
+    let best = null;
+    for (const yy of [y-1, y, y+1]){
+      const start = new Date(yy, p.m1-1, p.d1);
+      const wraps = (p.m2 < p.m1) || (p.m2 === p.m1 && p.d2 < p.d1);
+      const end = new Date(yy + (wraps?1:0), p.m2-1, p.d2);
+      if (end >= day && (!best || start < best.start)) best = { key:`${task.id}-${yy}-${pad(p.m1)}${pad(p.d1)}`, start, end };
     }
     return best;
   }
