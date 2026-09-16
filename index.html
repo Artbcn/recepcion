@@ -30,8 +30,8 @@ body{
   font-family:'Outfit',system-ui,sans-serif; background:var(--paper); color:var(--ink);
   min-height:100vh; padding:0 16px 70px;
 }
-.wrap{max-width:1240px; margin:0 auto}
-header{max-width:1240px; margin:0 auto; padding:24px 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
+.wrap{max-width:1600px; margin:0 auto}
+header{max-width:1600px; margin:0 auto; padding:24px 0 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap}
 h1{font-size:24px; font-weight:800; letter-spacing:-.02em; white-space:nowrap}
 h1 .a1{color:var(--towel)} h1 .a2{color:var(--client)}
 header .date-pick{margin-left:auto; display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft)}
@@ -2178,11 +2178,12 @@ function renderTareas(){
 
   const fondoCellHtml = (t) => {
     if (!isCheckoutTask(t) || !pf.length) return '<span class="none-f">—</span>';
-    const pend = pf.filter(({task, occ}) => !isFondoAptDoneUni(task, occ, t.hab) && isFondoSelected(task.id, t.hab));
-    if (!pend.length) return '<span class="none-f">—</span>';
-    return pend.map(({task, occ}) => {
-      return `<button class="fondo-mini" data-key="${esc(occ.key)}" data-task-id="${esc(task.id)}" title="Marcar hecho en este apartamento">`
-        + `<span class="fm-box">◻</span>${esc(task.checkoutLabel || task.label)}</button>`;
+    const relevant = pf.filter(({task, occ}) => isFondoSelected(task.id, t.hab));
+    if (!relevant.length) return '<span class="none-f">—</span>';
+    return relevant.map(({task, occ}) => {
+      const done = isFondoAptDoneUni(task, occ, t.hab);
+      return `<button class="fondo-mini${done ? ' done' : ''}" data-key="${esc(occ.key)}" data-task-id="${esc(task.id)}" title="Marcar hecho en este apartamento">`
+        + `<span class="fm-box">${done ? '✓' : '◻'}</span>${esc(task.checkoutLabel || task.label)}</button>`;
     }).join('');
   };
 
