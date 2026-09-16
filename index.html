@@ -1119,6 +1119,19 @@ async function renderCierre(){
   try{ const r = await sb.from('limp_cierre').select('*').eq('fecha', fecha); cierre = r.data || []; }catch(e){}
   try{ const r = await sb.from('limp_parte').select('data').eq('fecha', fecha).maybeSingle(); parte = (r.data && r.data.data) || null; }catch(e){}
   const cmap = {}; for (const c of cierre){ cmap[c.kind + '|' + c.hab] = c; }
+  /* anotaciones diarias "por apartamento" (ej: color del piso del baño), ya supervisadas por la encargada */
+  const diariaAptoPorApt = {};
+  try{
+    const rDia = await sb.from('dist_tareas_diarias').select('id,texto').eq('por_apto', true);
+    const textoById = {}; (rDia.data || []).forEach(d => { textoById[d.id] = d.texto; });
+    for (const c of cierre){
+      if (c.kind !== 'diaria_apto' || !c.sup || !c.nota) continue;
+      const idx = c.hab.lastIndexOf('§'); if (idx < 0) continue;
+      const apt = c.hab.slice(0, idx), tareaId = c.hab.slice(idx + 1);
+      const label = textoById[tareaId] || textoById[Number(tareaId)] || 'nota';
+      (diariaAptoPorApt[apt] = diariaAptoPorApt[apt] || []).push(`${label}: ${c.nota}`);
+    }
+  }catch(e){}
   const groups = [
     { kind:'piso',    title:'Pisos',                items:(parte && parte.pisos)    || [] },
     { kind:'toalla',  title:'Cambios de toalla',    items:(parte && parte.toallas)  || [] },
@@ -1160,7 +1173,10 @@ async function renderCierre(){
       const c = cmap[g.kind + '|' + (it.id || it.hab)];
       const done = !!(c && c.hecho); if (done) doneN++;
       let mid = '';
-      if (g.kind === 'piso') mid = (it.tipoLbl||'') + (it.obs ? ' · ' + it.obs : '') + (it.cama ? ' · ' + it.cama : '') + (it.coment ? ' · ' + it.coment : '') + (it.huesped ? ' · ' + it.huesped : '');
+      if (g.kind === 'piso'){
+        mid = (it.tipoLbl||'') + (it.obs ? ' · ' + it.obs : '') + (it.cama ? ' · ' + it.cama : '') + (it.coment ? ' · ' + it.coment : '') + (it.huesped ? ' · ' + it.huesped : '');
+        if (diariaAptoPorApt[it.hab] && diariaAptoPorApt[it.hab].length) mid += ' · ' + diariaAptoPorApt[it.hab].join(' · ');
+      }
       else if (g.kind === 'pextra') mid = it.desc || '';
       else mid = (it.huesped||'') + (it.hora ? ' · ' + it.hora : '');
       html += rowHtml(it.hab, done, mid, c && c.nota);
