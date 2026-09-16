@@ -1169,7 +1169,11 @@ async function renderCierre(){
   const extras = cierre.filter(c => c.kind === 'extra');
   if (extras.length){
     html += '<h3 style="margin:16px 0 4px">Agregados por limpieza</h3>';
-    for (const c of extras) html += rowHtml(c.hab, true, c.nota || 'extra', '');
+    for (const c of extras){
+      const done = c.empleada ? !!c.sup : true;
+      const fotosHtml = (c.fotos && c.fotos.length) ? ' 📷' : '';
+      html += rowHtml(c.hab, done, (c.nota || 'extra') + (c.empleada ? ' · ' + c.empleada : '') + fotosHtml, '');
+    }
   }
   // ===== MANTENIMIENTO en el cierre =====
   let mcierre = [], mparte = null;
