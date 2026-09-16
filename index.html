@@ -941,8 +941,8 @@ function slotFor(hab, def){ const o = lsGet(slotKey(), {}); return o[hab] || def
 function setSlot(hab, val){ const o = lsGet(slotKey(), {}); o[hab] = val; lsSet(slotKey(), o); }
 
 /* hora personalizada de cambio de toallas, por apartamento y por fecha de informe.
-   Default 13:00 (dentro de la franja 11:00–16:00) pero admite cualquier hora. */
-const TOWEL_DEF_HORA = '13:00';
+   Default 11:00 (dentro de la franja 11:00–16:00) pero admite cualquier hora. */
+const TOWEL_DEF_HORA = '11:00';
 const towelKey = () => 'art-towelh-' + tareasISO;
 function towelHora(hab){ const o = lsGet(towelKey(), {}); return o[hab] || TOWEL_DEF_HORA; }
 function setTowelHora(hab, val){ const o = lsGet(towelKey(), {}); o[hab] = val; lsSet(towelKey(), o); }
@@ -3028,7 +3028,7 @@ function openExtraForm(){
   f.innerHTML = `
     <input type="text" class="xf-hab" placeholder="Apto" inputmode="numeric">
     <input type="text" class="xf-name" placeholder="Nombre (opcional)">
-    <input type="time" class="xf-hora" value="10:00">
+    <input type="time" class="xf-hora" value="11:00">
     <button class="xf-ok">Agregar</button>
     <button class="xf-cancel">Cancelar</button>`;
   const submit = () => {
