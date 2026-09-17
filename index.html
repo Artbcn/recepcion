@@ -1188,7 +1188,7 @@ async function renderCierre(){
   if (extras.length){
     html += '<h3 style="margin:16px 0 4px">Agregados por limpieza</h3>';
     for (const c of extras){
-      const done = c.empleada ? !!c.sup : true;
+      const done = c.empleada ? !!(c.hab && cmap['piso|' + c.hab] && cmap['piso|' + c.hab].hecho) : true;
       const fotosHtml = (c.fotos && c.fotos.length) ? ' 📷' : '';
       html += rowHtml(c.hab, done, (c.nota || 'extra') + (c.empleada ? ' · ' + c.empleada : '') + fotosHtml, '');
     }
