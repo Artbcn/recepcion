@@ -2155,10 +2155,9 @@ function buildTasks(){
   /* antes de tirar la lista vieja, guardamos lo que el usuario escribió a mano por habitación
      (comentario, prioridad, hora), para no perderlo si solo recargó UNO de los tres informes */
   const prevByHab = new Map(tasks.map(t => [t.hab, t]));
-  /* el parte es para MAÑANA (día base + 1). Filtramos las filas de los informes
-     para que solo entren las llegadas/salidas de ese día, y no las de otros días. */
-  const hoy0 = new Date(); hoy0.setHours(0,0,0,0);
-  const target = new Date(hoy0); target.setDate(target.getDate() + 1);
+  /* el parte es para el día siguiente al "Día base" que vos elegiste arriba — NUNCA el reloj
+     del sistema, así preparar un día futuro no interfiere con el día que ya está en curso */
+  const target = addDays(refDate(), 1);
   const targetISO = toISO(target);
   const sameDay = (d) => d && toISO(d) === targetISO;
   let depF = (departureRows || []).filter(r => sameDay(r.salida));
