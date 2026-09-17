@@ -1091,8 +1091,8 @@ function parteSnapshot(){
       cama: t.cama, coment: t.coment, horaLleg: t.hora, horaSalida: t.horaSalida, priori: t.priori,
       llegada: fmt(t.llegada), salida: fmt(t.salida)
     })),
-    toallas: towels.map(g => ({ hab: g.hab, huesped: g.huesped, hora: towelHora(g.hab), manual: !!g._manual })),
-    clientes: clients.map(c => ({ hab: c.g.hab, huesped: c.g.huesped, hora: c.hora, extra: !!c.extra })),
+    toallas: towels.map(g => ({ hab: g.hab, huesped: g.huesped, hora: towelHora(g.hab), manual: !!g._manual, avisado: isConfirmed(g.hab, 't') })),
+    clientes: clients.map(c => ({ hab: c.g.hab, huesped: c.g.huesped, hora: c.hora, extra: !!c.extra, avisado: isConfirmed(c.extra ? 'x' + c.g.hab : c.g.hab, 'c') })),
     pextras: pextras()
   };
 }
@@ -2990,13 +2990,13 @@ function renderHoy(){
         <button class="del-tw" title="Quitar esta toalla">✕</button>
       </span>`;
     const msg = () => fillTpl($('tplTowel').value, g.hab, towelHora(g.hab));
-    row.querySelector('.thora').addEventListener('change', e => { setTowelHora(g.hab, e.target.value || TOWEL_DEF_HORA); renderHoy(); });
-    row.querySelector('.conf').addEventListener('click', () => { toggleConf(g.hab, 't', 'ok'); renderHoy(); });
+    row.querySelector('.thora').addEventListener('change', e => { setTowelHora(g.hab, e.target.value || TOWEL_DEF_HORA); renderHoy(); saveState(); });
+    row.querySelector('.conf').addEventListener('click', () => { toggleConf(g.hab, 't', 'ok'); renderHoy(); saveState(); });
     row.querySelector('.msg-btn').addEventListener('click', e => copyText(msg(), e.target));
     row.querySelector('.del-tw').addEventListener('click', () => {
       if (g._manual) { removeManualTowel(g._manualIdx); }
       else { hideTowel(g.hab); }
-      renderHoy(); refreshPrev();
+      renderHoy(); refreshPrev(); saveState();
     });
     lt.appendChild(row);
   }
@@ -3011,7 +3011,7 @@ function renderHoy(){
     rem.style.cssText = 'margin-top:10px';
     rem.innerHTML = removedTowels.map(g => `<div style="display:flex;align-items:center;gap:10px;padding:6px 2px;color:#a8a196;font-size:13px"><span style="text-decoration:line-through">${esc(g.hab)} · ${esc(g.huesped)||'—'}</span><button class="restore-tw" data-hab="${esc(g.hab)}" style="border:none;background:transparent;color:#0FA3A3;font-weight:700;cursor:pointer">↺ Restaurar</button></div>`).join('');
     lt.appendChild(rem);
-    rem.querySelectorAll('.restore-tw').forEach(b => b.addEventListener('click', () => { unhideTowel(b.dataset.hab); renderHoy(); refreshPrev(); }));
+    rem.querySelectorAll('.restore-tw').forEach(b => b.addEventListener('click', () => { unhideTowel(b.dataset.hab); renderHoy(); refreshPrev(); saveState(); }));
   }
 
   const lc = $('listClients'); lc.innerHTML = '';
@@ -3033,9 +3033,9 @@ function renderHoy(){
         <button class="del-cl" title="Quitar esta limpieza">✕</button>
       </span>`;
     const msg = () => fillTpl($('tplClean').value, g.hab, slotFor(cid, hora));
-    row.querySelector('.chora').addEventListener('change', e => { setSlot(cid, e.target.value); renderHoy(); });
-    row.querySelector('.conf').addEventListener('click', () => { toggleConf(cid, 'c', 'ok'); renderHoy(); });
-    row.querySelector('.nope-btn').addEventListener('click', () => { toggleConf(cid, 'c', 'no'); renderHoy(); });
+    row.querySelector('.chora').addEventListener('change', e => { setSlot(cid, e.target.value); renderHoy(); saveState(); });
+    row.querySelector('.conf').addEventListener('click', () => { toggleConf(cid, 'c', 'ok'); renderHoy(); saveState(); });
+    row.querySelector('.nope-btn').addEventListener('click', () => { toggleConf(cid, 'c', 'no'); renderHoy(); saveState(); });
     row.querySelector('.msg-btn').addEventListener('click', e => copyText(msg(), e.target));
     row.querySelector('.del-cl').addEventListener('click', () => {
       if (c.extra) { removeExtraClean(c.idx); }
@@ -3055,7 +3055,7 @@ function renderHoy(){
     rem.style.cssText = 'margin-top:10px';
     rem.innerHTML = removedClients.map(g => `<div style="display:flex;align-items:center;gap:10px;padding:6px 2px;color:#a8a196;font-size:13px"><span style="text-decoration:line-through">${esc(g.hab)} · ${esc(g.huesped)||'—'}</span><button class="restore-cl" data-hab="${esc(g.hab)}" style="border:none;background:transparent;color:#0FA3A3;font-weight:700;cursor:pointer">↺ Restaurar</button></div>`).join('');
     lc.appendChild(rem);
-    rem.querySelectorAll('.restore-cl').forEach(b => b.addEventListener('click', () => { unhideClient(b.dataset.hab); renderHoy(); refreshPrev(); }));
+    rem.querySelectorAll('.restore-cl').forEach(b => b.addEventListener('click', () => { unhideClient(b.dataset.hab); renderHoy(); refreshPrev(); saveState(); }));
   }
 }
 /* pequeño formulario en línea para agregar una limpieza extra */
@@ -3099,7 +3099,7 @@ function openManualTowelForm(){
     const hab = f.querySelector('.xf-hab').value.trim();
     if (!hab){ f.querySelector('.xf-hab').focus(); return; }
     addManualTowel(hab, f.querySelector('.xf-name').value);
-    renderHoy(); refreshPrev();
+    renderHoy(); refreshPrev(); saveState();
   };
   f.querySelector('.xf-ok').addEventListener('click', submit);
   f.querySelector('.xf-hab').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
