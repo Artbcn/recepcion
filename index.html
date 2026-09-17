@@ -1125,9 +1125,11 @@ async function renderCierre(){
     const rDia = await sb.from('dist_tareas_diarias').select('id,texto').eq('por_apto', true);
     const textoById = {}; (rDia.data || []).forEach(d => { textoById[d.id] = d.texto; });
     for (const c of cierre){
-      if (c.kind !== 'diaria_apto' || !c.sup || !c.nota) continue;
+      if (c.kind !== 'diaria_apto' || !c.nota) continue;
       const idx = c.hab.lastIndexOf('§'); if (idx < 0) continue;
       const apt = c.hab.slice(0, idx), tareaId = c.hab.slice(idx + 1);
+      const aptoHecho = cmap['piso|' + apt] && cmap['piso|' + apt].hecho;
+      if (!aptoHecho) continue;
       const label = textoById[tareaId] || textoById[Number(tareaId)] || 'nota';
       (diariaAptoPorApt[apt] = diariaAptoPorApt[apt] || []).push(`${label}: ${c.nota}`);
     }
