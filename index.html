@@ -469,7 +469,7 @@ tr.has-fondo td{background:#FEFBF5}
  <button id="tabBtnFondo" style="display:none">Limpiezas de fondo</button>
  <button id="tabBtnHist">Historial</button>
  <button id="tabBtnCierre">Cierre del día</button>
- <button id="tabBtnMant">Mantenimiento</button>
+ <button id="tabBtnMant">Diego</button>
  <button id="tabBtnFondoP">Limpieza de fondo</button>
  <button id="tabBtnMantP">Mant. preventivo</button>
  <button id="tabBtnCalP">Calendario</button>
@@ -1341,7 +1341,7 @@ function renderIncidenciasHistHtml(){
   if (!log.length) return '';
   const grupos = incidenciasAgrupadas();
   const repetidas = grupos.filter(g => g.veces > 1);
-  let html = H(`\ud83d\udcca Historial de incidencias <span style="color:var(--ink-soft)">(${log.length} registradas \u00b7 ${repetidas.length} se repitieron)</span>`);
+  let html = `<h3 style="margin:16px 0 6px;font-size:14px">\ud83d\udcca Historial de incidencias <span style="color:var(--ink-soft);font-weight:400;font-size:12.5px">(${log.length} registradas \u00b7 ${repetidas.length} se repitieron)</span></h3>`;
   html += `<div class="hint" style="text-align:left;margin-bottom:10px">Queda guardado para siempre en este navegador. Un mismo problema en el mismo apto, aunque lo hayas escrito distinto, se agrupa si el texto es igual (may\u00fasculas o espacios no importan).</div>`;
   html += `<button class="btn" id="btnExportIncidencias" style="margin-bottom:10px">\u2b07 Exportar historial a Excel</button>`;
   html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">';
