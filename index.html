@@ -1322,6 +1322,57 @@ function countIncidencia(hab, desc){
   for (const e of log){ if (e.descNorm === nd){ total++; if (String(e.hab).trim() === habN) porApto++; } }
   return { porApto, total };
 }
+/* agrupa el log histórico por (apto + problema) para ver cuáles se repiten */
+function incidenciasAgrupadas(){
+  const log = incidenciasLog();
+  const groups = new Map();
+  for (const e of log){
+    const key = String(e.hab).trim() + '||' + e.descNorm;
+    if (!groups.has(key)) groups.set(key, { hab: e.hab, desc: e.desc, descNorm: e.descNorm, fechas: [] });
+    const g = groups.get(key);
+    g.fechas.push(e.fecha);
+    if (e.fecha > (g.ultima || '')) { g.ultima = e.fecha; g.desc = e.desc; }   /* última descripción tal cual se escribió */
+  }
+  return [...groups.values()].map(g => ({ ...g, veces: g.fechas.length, fechas: g.fechas.sort() }))
+    .sort((a,b) => b.veces - a.veces || (b.ultima||'').localeCompare(a.ultima||''));
+}
+function renderIncidenciasHistHtml(){
+  const log = incidenciasLog();
+  if (!log.length) return '';
+  const grupos = incidenciasAgrupadas();
+  const repetidas = grupos.filter(g => g.veces > 1);
+  let html = H(`\ud83d\udcca Historial de incidencias <span style="color:var(--ink-soft)">(${log.length} registradas \u00b7 ${repetidas.length} se repitieron)</span>`);
+  html += `<div class="hint" style="text-align:left;margin-bottom:10px">Queda guardado para siempre en este navegador. Un mismo problema en el mismo apto, aunque lo hayas escrito distinto, se agrupa si el texto es igual (may\u00fasculas o espacios no importan).</div>`;
+  html += `<button class="btn" id="btnExportIncidencias" style="margin-bottom:10px">\u2b07 Exportar historial a Excel</button>`;
+  html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">';
+  html += '<tr><th style="text-align:left;padding:6px 8px;border-bottom:1.5px solid var(--line)">Apto</th><th style="text-align:left;padding:6px 8px;border-bottom:1.5px solid var(--line)">Problema</th><th style="padding:6px 8px;border-bottom:1.5px solid var(--line)">Veces</th><th style="text-align:left;padding:6px 8px;border-bottom:1.5px solid var(--line)">\u00daltima vez</th><th style="text-align:left;padding:6px 8px;border-bottom:1.5px solid var(--line)">Fechas</th></tr>';
+  for (const g of grupos){
+    const rep = g.veces > 1;
+    html += `<tr${rep?' style="background:#fdf6e8"':''}>` +
+      `<td style="padding:6px 8px;border-bottom:1px solid var(--line);font-weight:700">${esc(g.hab)}</td>` +
+      `<td style="padding:6px 8px;border-bottom:1px solid var(--line)">${esc(g.desc)}</td>` +
+      `<td style="padding:6px 8px;border-bottom:1px solid var(--line);text-align:center;font-weight:800;color:${rep?'#a9741a':'var(--ink-soft)'}">${g.veces}</td>` +
+      `<td style="padding:6px 8px;border-bottom:1px solid var(--line)">${esc((g.ultima||'').split('-').reverse().join('/'))}</td>` +
+      `<td style="padding:6px 8px;border-bottom:1px solid var(--line);color:var(--ink-soft);font-size:11.5px">${g.fechas.map(f=>f.split('-').reverse().join('/')).join(', ')}</td>` +
+    `</tr>`;
+  }
+  html += '</table></div>';
+  return html;
+}
+function exportIncidenciasExcel(){
+  try{
+    const grupos = incidenciasAgrupadas();
+    const header = ['Apartamento', 'Problema', 'Veces repetido', 'Última vez', 'Todas las fechas'];
+    const aoa = [header];
+    for (const g of grupos){
+      aoa.push([g.hab, g.desc, g.veces, (g.ultima||'').split('-').reverse().join('/'), g.fechas.map(f=>f.split('-').reverse().join('/')).join(', ')]);
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Incidencias');
+    const d = new Date();
+    XLSX.writeFile(wb, `Historial_Incidencias_${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}.xlsx`);
+  }catch(e){ showError('No pude exportar: ' + e.message); }
+}
 
 function mantParteSnapshot(){
   const der = mantDerive(); const mp = mpState(); const hid = new Set(mp.hidden || []);
@@ -1447,6 +1498,8 @@ function renderMantParte(){
     );
   }).join('');
 
+  html += renderIncidenciasHistHtml();
+
   /* aptos ocultados con la ✕ (puntual/general) que hoy siguen teniendo movimiento real:
      se pueden traer de vuelta acá, uno por uno o todos juntos */
   const hiddenGenHabs = (mp.hidden||[]).filter(k => k.startsWith('general|')).map(k => k.slice(8))
@@ -1500,6 +1553,8 @@ function renderMantParte(){
     logIncidencia(hab, desc);
     rep();
   });
+  const expIncBtn = document.getElementById('btnExportIncidencias');
+  if (expIncBtn) expIncBtn.addEventListener('click', exportIncidenciasExcel);
 
   document.querySelectorAll('.mp-daily-del').forEach(btn => btn.addEventListener('click', () => {
     const list = dailyMantTasks(); list.splice(parseInt(btn.dataset.i), 1);
