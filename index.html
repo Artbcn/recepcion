@@ -1283,7 +1283,12 @@ function mantDerive(){
     const pendPeriod = pendingPeriodTasks('mantenimiento', dref, h).map(x => x.task.label);
     return { hab:h, huesped:'', pend: pendPeriod };
   });
-  return { puntual, general, libre };
+  /* ocupados: tienen huésped hoy y NO se vacían ni tienen ventana — Diego no puede entrar a limpiar/trabajar,
+     pero pueden avisar una incidencia puntual igual */
+  const ocupadoHabs = new Set(guests.map(g => g.hab).filter(h => !puntualHabs.has(h) && !departureHabs.has(h) && !libreHabs.has(h)));
+  const huespedByHab = {}; guests.forEach(g => { if (!huespedByHab[g.hab]) huespedByHab[g.hab] = g.huesped || ''; });
+  const ocupado = [...ocupadoHabs].sort(cmpHab).map(h => ({ hab:h, huesped: huespedByHab[h] || '' }));
+  return { puntual, general, libre, ocupado };
 }
 function mpKey(){ return 'art-mantparte-' + tareasISO; }
 function mpState(){ return lsGet(mpKey(), { notas:{}, general:{}, extras:[], hidden:[], manual:{ shared:[], porApto:{} } }); }
@@ -1508,12 +1513,20 @@ function renderMantParte(){
   }).join('');
 
   const extras = mp.extras || [];
-  html += H('\ud83c\udfe0 Incidencias \u2014 apto + comentario');
-  html += `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0">` +
-    `<input id="mpxHab" placeholder="Apto" inputmode="numeric" style="width:80px;border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
-    `<input id="mpxDesc" placeholder="comentario (agua, luz, cama rota\u2026)" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
-    `<select id="mpxHora" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit"><option value="">\u2014 hora \u2014</option>${MANT_HORAS.map(h=>`<option value="${h}">${h}</option>`).join('')}</select>` +
-    `<button id="mpxAdd" class="btn">Agregar</button></div>`;
+  const ocupados = der.ocupado || [];
+  html += H(`\ud83c\udfe0 Incidencias \u2014 solo apartamentos ocupados <span style="color:var(--ink-soft)">(${ocupados.length})</span>`);
+  html += `<div class="hint" style="text-align:left;margin-bottom:8px">Es para avisarle a Diego de algo puntual en un apto donde hay hu\u00e9sped y no puede entrar a trabajar tranquilo. Para el resto de las tareas (apartamentos en ventana o libres), carg\u00e1las directo en la tarjeta de ese apto, en el campo "reparaci\u00f3n chica".</div>`;
+  if (!ocupados.length){
+    html += `<div class="none" style="display:block">No hay apartamentos ocupados hoy.</div>`;
+  } else {
+    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0">` +
+      `<select id="mpxHab" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
+      ocupados.map(o => `<option value="${esc(o.hab)}">${esc(o.hab)}${o.huesped ? ' \u2014 ' + esc(o.huesped) : ''}</option>`).join('') +
+      `</select>` +
+      `<input id="mpxDesc" placeholder="comentario (agua, luz, cama rota\u2026)" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
+      `<select id="mpxHora" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit"><option value="">\u2014 hora \u2014</option>${MANT_HORAS.map(h=>`<option value="${h}">${h}</option>`).join('')}</select>` +
+      `<button id="mpxAdd" class="btn">Agregar</button></div>`;
+  }
   if (extras.length) html += extras.map(e => {
     const c = countIncidencia(e.hab, e.desc);
     const badge = (c.porApto > 1 || c.total > 1)
