@@ -1602,7 +1602,10 @@ function periodLabel(p){
     const dias = (p.diaIni && p.diaIni !== 1) || (p.diaFin && p.diaFin !== 31) ? ` (del ${p.diaIni||1} al ${p.diaFin||31})` : '';
     return `${n} vez${n===1?'':'es'} al año: ` + (p.months||[]).map(m => MESES_C[m-1]).join(', ') + dias;
   }
-  if (p.type === 'rolling') return `Cada ${p.months} mes${p.months===1?'':'es'} desde la \u00faltima vez`;
+  if (p.type === 'rolling'){
+    const mv = (p.mesesValidos && p.mesesValidos.length) ? ` (solo en ${p.mesesValidos.map(m=>MESES_C[m-1]).join(', ')})` : '';
+    return `Cada ${p.months} mes${p.months===1?'':'es'} desde la \u00faltima vez${mv}`;
+  }
   if (p.type === 'interval') return `Cada ${p.months} mes${p.months===1?'':'es'}`;
   if (p.type === 'windows') return (p.ranges||[]).map(([a,b]) => a===b ? MESES_C[a-1] : `${MESES_C[a-1]}-${MESES_C[b-1]}`).join(' y ');
   if (p.type === 'daterange') return `Del ${p.d1} ${MESES_C[p.m1-1]} al ${p.d2} ${MESES_C[p.m2-1]} (todos los años)`;
@@ -1656,7 +1659,14 @@ function periodEditorHtml(task){
       ${daySelect('pe-td',task.id,'diaFin',diaFin)}
       <span style="font-size:12px;color:var(--ink-soft)">de cada mes (dejalo en 1 y 31 para todo el mes)</span>
     </span>
-    <span class="pe-rolling-wrap" style="display:${isRolling?'inline-flex':'none'};gap:6px;align-items:center">cada <input type="number" min="1" class="pe-rolling-n" data-id="${esc(task.id)}" value="${isRolling ? (p.months||1) : 1}" style="width:48px;border:1px solid var(--line);border-radius:8px;padding:5px 6px"> mes(es), contados desde que se marca hecha</span>
+    <span class="pe-rolling-wrap" style="display:${isRolling?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap;width:100%">
+      <span style="display:inline-flex;gap:6px;align-items:center">cada <input type="number" min="1" class="pe-rolling-n" data-id="${esc(task.id)}" value="${isRolling ? (p.months||1) : 1}" style="width:48px;border:1px solid var(--line);border-radius:8px;padding:5px 6px"> mes(es), contados desde que se marca hecha</span>
+      <span style="width:100%;font-size:12px;color:var(--ink-soft);margin-top:4px">solo si el mes que toca es (dejalo todo destildado para que valga cualquier mes):</span>
+      <span style="display:flex;flex-wrap:wrap;gap:4px">${MESES_C.map((m,i) => {
+        const on = isRolling && (p.mesesValidos||[]).includes(i+1);
+        return `<button type="button" class="pe-rolling-mes" data-id="${esc(task.id)}" data-m="${i+1}" style="border:1.5px solid ${on?'#E8A13D':'var(--line)'};background:${on?'#fdf0d9':'#fff'};color:${on?'#9a6a0a':'var(--ink-soft)'};border-radius:7px;padding:4px 7px;font-size:11.5px;font-weight:700;cursor:pointer">${m}</button>`;
+      }).join('')}</span>
+    </span>
     <span class="pe-daterange-wrap" style="display:${isDaterange?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap">
       desde ${daySelect('pe-dr',task.id,'d1',dr.d1)} ${monthSelect2('pe-dr',task.id,'m1',dr.m1)}
       hasta ${daySelect('pe-dr',task.id,'d2',dr.d2)} ${monthSelect2('pe-dr',task.id,'m2',dr.m2)}
@@ -1739,6 +1749,11 @@ function renderPeriodTracker(task){
   }
   if (win === null && !(task.period && (task.period.type === 'manual' || task.period.type === 'rolling'))){
     box.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);font-style:italic">No vigente este mes.</div>`;
+    return;
+  }
+  if (task.period && task.period.type === 'rolling' && task.period.mesesValidos && task.period.mesesValidos.length
+      && !task.period.mesesValidos.includes(tareasDate().getMonth() + 1)){
+    box.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);font-style:italic">No vigente este mes (solo aplica en: ${task.period.mesesValidos.map(m=>MESES_C[m-1]).join(', ')}).</div>`;
     return;
   }
   if (task.cat === 'limpieza' && win && win.type !== 'manual'){
@@ -1889,6 +1904,14 @@ function wirePeriodPanel(containerId){
     d.period.months = Math.max(1, parseInt(inp.value) || 1);
     savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
   }));
+  box.querySelectorAll('.pe-rolling-mes').forEach(btn => btn.addEventListener('click', () => {
+    const defs = periodDefs(); const d = defs.find(x => x.id === btn.dataset.id); if (!d || !d.period) return;
+    const m = parseInt(btn.dataset.m);
+    const set = new Set(d.period.mesesValidos || []);
+    if (set.has(m)) set.delete(m); else set.add(m);
+    d.period.mesesValidos = [...set].sort((a,b)=>a-b);
+    savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
+  }));
 }
 /* solo para zonas comunes (botón único "marcar hecho"); se re-dibuja al tocar, así que hay que reconectar cada vez */
 function wireChipsFor(task){
@@ -1963,6 +1986,8 @@ function toggleCalMonth(taskId, m){
   if (!task.period || task.period.type === 'manual') task.period = { type:'times', months: [] };
   else if (task.period.type !== 'times') return;   /* rolling / daterange se editan desde su propia pestaña */
   const months = new Set(task.period.months || []);
+  const iba_a_quedar_vacia = months.has(m) && months.size === 1;
+  if (iba_a_quedar_vacia && !confirm(`"${task.label}" se va a quedar SIN ningún mes programado (pasa a "Sin período"). ¿Seguro?`)) return;
   if (months.has(m)) months.delete(m); else months.add(m);
   task.period.months = [...months].sort((a,b) => a-b);
   if (!task.period.months.length) task.period = { type:'manual' };
@@ -2730,7 +2755,11 @@ function pendingCheckoutFondos(ref){
   const out = [];
   for (const task of periodDefs()){
     if (task.cat !== 'limpieza' || task.scope !== 'apto') continue;
-    if (task.period && task.period.type === 'rolling'){ out.push({ task, occ: { key: task.id + '-rolling', start: day, end: day } }); continue; }
+    if (task.period && task.period.type === 'rolling'){
+      const mv = task.period.mesesValidos;
+      if (mv && mv.length && !mv.includes(day.getMonth() + 1)) continue;
+      out.push({ task, occ: { key: task.id + '-rolling', start: day, end: day } }); continue;
+    }
     const win = periodCurrentWindow(task, day);
     if (win && day >= win.start && day <= win.end) out.push({ task, occ: win });
   }
