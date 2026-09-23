@@ -84,6 +84,12 @@ header input[type=date]{font-family:'IBM Plex Mono',monospace; font-size:13px; b
 .panel{display:none}
 .panel.on{display:block}
 .hint{background:var(--card); border:1px dashed var(--line); border-radius:14px; padding:22px; text-align:center; color:var(--ink-soft); font-size:14px}
+.calMonthsGrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:12px; }
+.calMonthCard{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+.calMonthCard.cur{ border-color:#E8A13D; border-width:2px; background:#fffaf0; }
+.calMonthTitle{ font-weight:800; font-size:14px; text-transform:capitalize; margin-bottom:8px; display:flex; align-items:center; gap:8px }
+.calNow{ font-size:10px; font-weight:800; background:#E8A13D; color:#fff; border-radius:10px; padding:2px 8px; text-transform:uppercase }
+.calMonthPills{ display:flex; flex-wrap:wrap; min-height:28px }
 
 /* ---- Genéricos ---- */
 button{font-family:inherit; cursor:pointer}
@@ -1842,17 +1848,19 @@ function wireChipsFor(task){
   }));
 }
 /* ---- Calendario de trabajo: qué toca cada mes + agregar directo al parte del día ---- */
+const CAT_COLOR = {
+  limpieza:      { bg:'#e7f5ec', border:'#bfe6cd', text:'#128a4a' },
+  mantenimiento: { bg:'#e6eefc', border:'#c3d4f5', text:'#2c5db0' },
+  comunes:       { bg:'#f3e9fb', border:'#ddc4f2', text:'#7a3fa3' }
+};
 function renderPeriodCalendarPanel(){
   const box = document.getElementById('calPBody'); if (!box) return;
   const today = new Date(); const y = today.getFullYear();
   const defs = periodDefs();
-  let html = '<div class="hint" style="text-align:left;margin-bottom:10px">Toc\u00e1 un mes para prender o apagar esa tarea ese mes. Para tareas "cada N meses" o de rango de fechas fijo, edit\u00e1las desde su pesta\u00f1a de origen (Calendario limpieza / Mantenimiento preventivo).</div>';
-  html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">';
-  html += '<tr><th style="text-align:left;padding:6px 8px;border-bottom:1.5px solid var(--line)">Tarea</th>' + MESES_C.map(m => `<th style="padding:6px 4px;border-bottom:1.5px solid var(--line);color:var(--ink-soft)">${m}</th>`).join('') + '<th></th></tr>';
   const curM = today.getMonth()+1;
+  /* para cada tarea, en qué meses cae */
+  const dueByTask = new Map();
   for (const task of defs){
-    const editable = !task.period || task.period.type === 'manual' || task.period.type === 'times';
-    const months = new Set((task.period && task.period.type === 'times') ? (task.period.months || []) : []);
     const due = new Set();
     if (task.period && task.period.type !== 'manual'){
       for (let m=1;m<=12;m++){
@@ -1862,27 +1870,36 @@ function renderPeriodCalendarPanel(){
         }
       }
     }
-    const vigenteHoy = due.has(curM) || (task.period && (task.period.type === 'manual' || task.period.type === 'rolling'));
-    html += `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600">${esc(task.label)}<div style="font-size:11px;color:var(--ink-soft);font-weight:400">${esc(periodLabel(task.period))} · ${task.cat==='limpieza'?'limpieza':(task.cat==='comunes'?'zona común':'mantenimiento')}</div></td>`;
-    for (let m=1;m<=12;m++){
-      const on = due.has(m); const isCur = m===curM;
-      if (editable){
-        html += `<td style="text-align:center;padding:2px;border-bottom:1px solid var(--line);${isCur?'background:#fdf4e3':''}">
-          <button class="cal-cell" data-id="${esc(task.id)}" data-m="${m}" title="Tocá para ${on?'sacar':'programar'} este mes"
-            style="width:28px;height:28px;border-radius:7px;border:1.5px solid ${on?'#E8A13D':'var(--line)'};background:${on?'#fdf0d9':'transparent'};cursor:pointer;font-size:15px;color:#E8A13D;font-weight:800">${on?'●':''}</button>
-        </td>`;
-      } else {
-        html += `<td style="text-align:center;padding:6px 2px;border-bottom:1px solid var(--line);${isCur?'background:#fdf4e3':''}">${on?'<span style="color:#E8A13D;font-weight:800">●</span>':''}</td>`;
-      }
-    }
-    html += `<td style="border-bottom:1px solid var(--line);white-space:nowrap">${vigenteHoy ? `<button class="btn cal-add" data-id="${esc(task.id)}" style="font-size:12px;padding:4px 8px">+ Agregar al parte</button>` : ''}</td></tr>`;
+    dueByTask.set(task.id, due);
   }
-  html += '</table></div>';
-  html += '<div style="margin-top:14px;color:var(--ink-soft);font-size:12.5px">"+ Agregar al parte" la manda directo al parte de ma\u00f1ana (limpieza o mantenimiento, seg\u00fan corresponda), pidiendo el apartamento.</div>';
+  let html = '<div class="hint" style="text-align:left;margin-bottom:14px">Cada tarjeta es un mes. Toc\u00e1 un bot\u00f3n para prender/apagar esa tarea ese mes (solo tareas "manual" o "X veces al a\u00f1o" \u2014 las de \ud83d\udd12 se editan desde su pesta\u00f1a de origen). Verde = limpieza, azul = mantenimiento, violeta = zona com\u00fan.</div>';
+  html += '<div class="calMonthsGrid">';
+  for (let m=1;m<=12;m++){
+    const isCur = m===curM;
+    const enEsteMes = defs.filter(t => dueByTask.get(t.id).has(m));
+    const pills = enEsteMes.map(task => {
+      const c = CAT_COLOR[task.cat] || CAT_COLOR.mantenimiento;
+      const editable = !task.period || task.period.type === 'manual' || task.period.type === 'times';
+      return `<button class="cal-cell${editable?'':' locked'}" data-id="${esc(task.id)}" data-m="${m}" ${editable?'':'disabled'}
+        style="border:1.5px solid ${c.border};background:${c.bg};color:${c.text};border-radius:20px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:700;cursor:${editable?'pointer':'default'};opacity:${editable?'1':'.75'}">
+        ${editable?'':'🔒 '}${esc(task.label)}</button>`;
+    }).join('');
+    html += `<div class="calMonthCard${isCur?' cur':''}">
+      <div class="calMonthTitle">${MESES_C[m-1]}${isCur?' <span class="calNow">hoy</span>':''}</div>
+      <div class="calMonthPills">${pills || '<span style="color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas</span>'}</div>
+      <select class="calAddSel" data-m="${m}" style="margin-top:8px;width:100%;font-size:12px;border:1px solid var(--line);border-radius:7px;padding:4px">
+        <option value="">+ agregar tarea a este mes...</option>
+        ${defs.filter(t => (!t.period || t.period.type==='manual' || t.period.type==='times') && !dueByTask.get(t.id).has(m)).map(t => `<option value="${esc(t.id)}">${esc(t.label)}</option>`).join('')}
+      </select>
+    </div>`;
+  }
+  html += '</div>';
   html += renderControlTableHtml();
   box.innerHTML = html;
-  box.querySelectorAll('.cal-cell').forEach(btn => btn.addEventListener('click', () => toggleCalMonth(btn.dataset.id, parseInt(btn.dataset.m))));
-  box.querySelectorAll('.cal-add').forEach(btn => btn.addEventListener('click', () => addPeriodTaskToParte(btn.dataset.id)));
+  box.querySelectorAll('.cal-cell:not(.locked)').forEach(btn => btn.addEventListener('click', () => toggleCalMonth(btn.dataset.id, parseInt(btn.dataset.m))));
+  box.querySelectorAll('.calAddSel').forEach(sel => sel.addEventListener('change', () => {
+    if (sel.value) toggleCalMonth(sel.value, parseInt(sel.dataset.m));
+  }));
   const exportBtn = document.getElementById('btnExportControl');
   if (exportBtn) exportBtn.addEventListener('click', exportControlExcel);
 }
