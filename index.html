@@ -1430,9 +1430,13 @@ function renderMantParte(){
   const punt = der.puntual.filter(x => !hid.has('puntual|'+x.hab) && !manHabsUI.has(x.hab));
   const man = mp.manual || { shared:[], porApto:{} };
   const sharedVis = hid.has('shared|_general') ? [] : (man.shared||[]);
-  if (sharedVis.length){
-    html += cardWrap(delBtn('shared','_general') + '<b>General del d\u00eda</b><div style="margin-top:6px;color:#555">' + sharedVis.map(esc).join(' \u00b7 ') + '</div>');
-  }
+  html += H('\ud83d\udcdd General del d\u00eda \u2014 sin apartamento (ej: cambiar luces de entrada)');
+  html += cardWrap(
+    (sharedVis.length ? '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">' + sharedVis.map((t,i) =>
+      `<span style="display:inline-flex;align-items:center;gap:6px;background:#eef2f2;border-radius:999px;padding:5px 6px 5px 12px;font-size:13px">${esc(t)}<button class="mp-shared-del" data-i="${i}" style="border:none;background:transparent;color:#c0392b;cursor:pointer;font-weight:700">\u2715</button></span>`
+    ).join('') + '</div>' : '<div style="color:var(--ink-soft);font-size:12.5px;font-style:italic;margin-bottom:8px">Nada cargado todav\u00eda.</div>') +
+    '<div style="display:flex;gap:6px"><input id="mpSharedNew" placeholder="ej: cambiar luces de entrada, revisar port\u00f3n..." style="flex:1;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:inherit"><button id="mpSharedAdd" class="btn">Agregar</button></div>'
+  );
   const daily = dailyMantTasks();
   html += H('\ud83d\udd01 Tareas diarias (siempre en el parte, Lun-Vie)');
   html += cardWrap(
@@ -1607,6 +1611,21 @@ function renderMantParte(){
     if (!v) return;
     const list = dailyMantTasks(); list.push(v);
     saveDailyMantTasks(list); rep();
+  });
+  document.querySelectorAll('.mp-shared-del').forEach(btn => btn.addEventListener('click', () => {
+    const o = mpState(); o.manual = o.manual || { shared:[], porApto:{} }; o.manual.shared = o.manual.shared || [];
+    o.manual.shared.splice(parseInt(btn.dataset.i), 1);
+    saveMp(o); rep();
+  }));
+  const sharedAddBtn = document.getElementById('mpSharedAdd');
+  if (sharedAddBtn) sharedAddBtn.addEventListener('click', () => {
+    const inp = document.getElementById('mpSharedNew'); const v = (inp.value || '').trim();
+    if (!v) return;
+    const o = mpState(); o.manual = o.manual || { shared:[], porApto:{} }; o.manual.shared = o.manual.shared || [];
+    o.manual.shared.push(v);
+    saveMp(o);
+    inp.value = '';
+    rep();
   });
 
   const pasteBtn = document.getElementById('mpPasteBtn');
