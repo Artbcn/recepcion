@@ -1465,7 +1465,7 @@ function renderMantParte(){
     );
   }).join('') : '<div class="none" style="display:block">Sin ventanas de turnover hoy.</div>';
 
-  const gen = der.general.filter(x => !hid.has('general|'+x.hab) && x.pend.length && !manHabsUI.has(x.hab));
+  const gen = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabsUI.has(x.hab));
   html += H(`\ud83d\udee0\ufe0f General \u2014 aptos que se vac\u00edan <span style="color:var(--ink-soft)">(${gen.length})</span>`);
   html += '<div class="hint" style="text-align:left;margin-bottom:8px">Las tareas preventivas se agregan desde <b>Peri\u00f3dicas \u2192 Mant. preventivo</b>. Ac\u00e1 solo se muestran, ya elegidas.</div>';
   if (!gen.length) html += '<div class="none" style="display:block">No hay aptos vaci\u00e1ndose con pendientes.</div>';
