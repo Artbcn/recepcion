@@ -1389,9 +1389,11 @@ function mantParteSnapshot(){
     .map(x => ({ hab:x.hab, huesped:x.huesped, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x) }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const general = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, tareas:genSel(mp, x) })).filter(x => x.tareas.length);
+    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x) }))
+    .filter(x => x.nota.trim() || x.tareas.length);
   const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, tareas:genSel(mp, x) })).filter(x => x.tareas.length);
+    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x) }))
+    .filter(x => x.nota.trim() || x.tareas.length);
   const extras = (mp.extras || []).slice();
   const man = mp.manual || { shared:[], porApto:{} };
   const compartidas = dailyMantTasks().concat(hid.has('shared|_general') ? [] : (man.shared || []));
@@ -1485,7 +1487,8 @@ function renderMantParte(){
     return cardWrap(
       delBtn('general', x.hab) +
       `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">vac\u00edo</span>` +
-      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>')
+      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>') +
+      `<input class="mp-nota" data-hab="${esc(x.hab)}" placeholder="reparaci\u00f3n chica (enchufe, canilla, gotera\u2026) \u2014 opcional" value="${esc(mp.notas[x.hab]||'')}" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:inherit;font-size:14px">`
     );
   }).join('');
 
@@ -1499,7 +1502,8 @@ function renderMantParte(){
     return cardWrap(
       delBtn('libre', x.hab) +
       `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">libre</span>` +
-      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>')
+      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>') +
+      `<input class="mp-nota" data-hab="${esc(x.hab)}" placeholder="reparaci\u00f3n chica (enchufe, canilla, gotera\u2026) \u2014 opcional" value="${esc(mp.notas[x.hab]||'')}" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:inherit;font-size:14px">`
     );
   }).join('');
 
