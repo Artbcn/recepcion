@@ -1846,10 +1846,13 @@ function renderPeriodCalendarPanel(){
   const box = document.getElementById('calPBody'); if (!box) return;
   const today = new Date(); const y = today.getFullYear();
   const defs = periodDefs();
-  let html = '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">';
+  let html = '<div class="hint" style="text-align:left;margin-bottom:10px">Toc\u00e1 un mes para prender o apagar esa tarea ese mes. Para tareas "cada N meses" o de rango de fechas fijo, edit\u00e1las desde su pesta\u00f1a de origen (Calendario limpieza / Mantenimiento preventivo).</div>';
+  html += '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;font-size:12.5px">';
   html += '<tr><th style="text-align:left;padding:6px 8px;border-bottom:1.5px solid var(--line)">Tarea</th>' + MESES_C.map(m => `<th style="padding:6px 4px;border-bottom:1.5px solid var(--line);color:var(--ink-soft)">${m}</th>`).join('') + '<th></th></tr>';
   const curM = today.getMonth()+1;
   for (const task of defs){
+    const editable = !task.period || task.period.type === 'manual' || task.period.type === 'times';
+    const months = new Set((task.period && task.period.type === 'times') ? (task.period.months || []) : []);
     const due = new Set();
     if (task.period && task.period.type !== 'manual'){
       for (let m=1;m<=12;m++){
@@ -1863,17 +1866,36 @@ function renderPeriodCalendarPanel(){
     html += `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--line);font-weight:600">${esc(task.label)}<div style="font-size:11px;color:var(--ink-soft);font-weight:400">${esc(periodLabel(task.period))} · ${task.cat==='limpieza'?'limpieza':(task.cat==='comunes'?'zona común':'mantenimiento')}</div></td>`;
     for (let m=1;m<=12;m++){
       const on = due.has(m); const isCur = m===curM;
-      html += `<td style="text-align:center;padding:6px 2px;border-bottom:1px solid var(--line);${isCur?'background:#fdf4e3':''}">${on?'<span style="color:#E8A13D;font-weight:800">●</span>':''}</td>`;
+      if (editable){
+        html += `<td style="text-align:center;padding:2px;border-bottom:1px solid var(--line);${isCur?'background:#fdf4e3':''}">
+          <button class="cal-cell" data-id="${esc(task.id)}" data-m="${m}" title="Tocá para ${on?'sacar':'programar'} este mes"
+            style="width:28px;height:28px;border-radius:7px;border:1.5px solid ${on?'#E8A13D':'var(--line)'};background:${on?'#fdf0d9':'transparent'};cursor:pointer;font-size:15px;color:#E8A13D;font-weight:800">${on?'●':''}</button>
+        </td>`;
+      } else {
+        html += `<td style="text-align:center;padding:6px 2px;border-bottom:1px solid var(--line);${isCur?'background:#fdf4e3':''}">${on?'<span style="color:#E8A13D;font-weight:800">●</span>':''}</td>`;
+      }
     }
     html += `<td style="border-bottom:1px solid var(--line);white-space:nowrap">${vigenteHoy ? `<button class="btn cal-add" data-id="${esc(task.id)}" style="font-size:12px;padding:4px 8px">+ Agregar al parte</button>` : ''}</td></tr>`;
   }
   html += '</table></div>';
-  html += '<div style="margin-top:14px;color:var(--ink-soft);font-size:12.5px">El calendario muestra cuándo cae cada tarea. "+ Agregar al parte" la manda directo al parte de mañana (limpieza o mantenimiento, según corresponda), pidiendo el apartamento.</div>';
+  html += '<div style="margin-top:14px;color:var(--ink-soft);font-size:12.5px">"+ Agregar al parte" la manda directo al parte de ma\u00f1ana (limpieza o mantenimiento, seg\u00fan corresponda), pidiendo el apartamento.</div>';
   html += renderControlTableHtml();
   box.innerHTML = html;
+  box.querySelectorAll('.cal-cell').forEach(btn => btn.addEventListener('click', () => toggleCalMonth(btn.dataset.id, parseInt(btn.dataset.m))));
   box.querySelectorAll('.cal-add').forEach(btn => btn.addEventListener('click', () => addPeriodTaskToParte(btn.dataset.id)));
   const exportBtn = document.getElementById('btnExportControl');
   if (exportBtn) exportBtn.addEventListener('click', exportControlExcel);
+}
+function toggleCalMonth(taskId, m){
+  const defs = periodDefs(); const task = defs.find(t => t.id === taskId); if (!task) return;
+  if (!task.period || task.period.type === 'manual') task.period = { type:'times', months: [] };
+  else if (task.period.type !== 'times') return;   /* rolling / daterange se editan desde su propia pestaña */
+  const months = new Set(task.period.months || []);
+  if (months.has(m)) months.delete(m); else months.add(m);
+  task.period.months = [...months].sort((a,b) => a-b);
+  if (!task.period.months.length) task.period = { type:'manual' };
+  savePeriodDefs(defs);
+  renderPeriodCalendarPanel();
 }
 /* apartamentos con al menos un dato registrado en Última vez por apartamento (limpieza o mantenimiento) */
 function controlApartments(){
