@@ -1612,10 +1612,11 @@ function renderPeriodPanel(cats, containerId){
       \u26a0\ufe0f Todav\u00eda no carg\u00e1ste el Arrival/Departure de ma\u00f1ana en la pesta\u00f1a <b>Tareas</b>. Sin eso, no hay forma de saber qu\u00e9 apartamentos tienen ventana o se vac\u00edan \u2014 por eso no aparece ning\u00fan bot\u00f3n abajo. Carg\u00e1los ah\u00ed primero y volv\u00e9 ac\u00e1.
     </div>`;
   }
-  html += `<div style="display:flex;gap:14px;align-items:center;margin-bottom:14px;font-size:12px;color:var(--ink-soft)">
+  html += `<div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:var(--ink-soft)">
     <b style="color:var(--ink-soft)">Referencia:</b>
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#E8A13D;margin-right:4px;vertical-align:middle"></span>Ventana (sale y entra hoy)</span>
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1E8C4E;margin-right:4px;vertical-align:middle"></span>Vac\u00edo (solo sale, sin re-ocupar)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#E8A13D;margin-right:4px;vertical-align:middle"></span>Ventana (sale y entra hoy, ventana 11-16h)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#1E8C4E;margin-right:4px;vertical-align:middle"></span>Vac\u00edo (sale hoy, sin re-ocupar)</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#2c5db0;margin-right:4px;vertical-align:middle"></span>Libre (sin hu\u00e9sped ni movimiento hoy, todo el d\u00eda)</span>
     <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#C0392B;margin-right:4px;vertical-align:middle"></span>Ocupado (no se muestra ac\u00e1)</span>
   </div>`;
   for (const task of defs){
@@ -1639,14 +1640,20 @@ function renderPeriodPanel(cats, containerId){
 }
 /* apartamentos donde esta tarea periódica está pendiente HOY (ventana o se vacía), según los informes cargados */
 /* apartamentos con movimiento HOY (ventana o se vacía) relevantes para esta tarea, sin importar si ya está resuelta */
+const ALL_HABS = ["101","102","103","104","105","106","107","201","202","203","204","205","206","207",
+                   "301","302","303","304","305","306","307","401","402","403","404","405","406","407"];
 function periodApartmentsWithMovementToday(task){
   if (task.scope !== 'apto') return [];
-  const map = new Map();   /* hab -> 'ventana' | 'vacio' */
+  const map = new Map();   /* hab -> 'ventana' | 'vacio' | 'libre' */
   if (task.cat === 'mantenimiento'){
     for (const t of tasks){
       if (t.tipo === 'llegada' && t.esSalida) map.set(t.hab, 'ventana');
       else if (t.tipo === 'salida') map.set(t.hab, 'vacio');
     }
+    /* además, los aptos que hoy no tienen huésped ni movimiento están libres todo el día
+       (más cómodos para trabajar que los de ventana, que solo tienen unas horas) */
+    const ocupadosOconMov = new Set([...map.keys(), ...guests.map(g => g.hab)]);
+    for (const hab of ALL_HABS) if (!ocupadosOconMov.has(hab)) map.set(hab, 'libre');
   } else if (task.cat === 'limpieza'){
     /* solo si la tarea está VIGENTE este período (ej: aerotermia solo en feb/may/ago/nov);
        si no está en ventana, no tiene sentido ofrecerla aunque el apto se vacíe */
@@ -1682,12 +1689,14 @@ function renderPeriodTracker(task){
   }
   const targets = periodApartmentsWithMovementToday(task);
   if (!targets.length){
-    box.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);font-style:italic">Ning\u00fan apartamento tiene ventana ni se vac\u00eda hoy.</div>`;
+    box.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);font-style:italic">Ning\u00fan apartamento tiene ventana, se vac\u00eda, ni est\u00e1 libre hoy.</div>`;
     return;
   }
   const est = periodEstado()[task.id] || {};
   const tipoTag = (tipo) => tipo === 'ventana'
     ? '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#fdf0d9;color:#9a6a0a;margin-left:4px">VENTANA</span>'
+    : tipo === 'libre'
+    ? '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#e6eefc;color:#2c5db0;margin-left:4px">LIBRE</span>'
     : '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#e3f4ea;color:#1E8C4E;margin-left:4px">VAC\u00cdO</span>';
   const isSelectedMant = (a) => { const o = mpState(); return !!(o.general && o.general[a] && o.general[a].includes(task.label)); };
   const isSelected = (a) => task.cat === 'limpieza' ? isFondoSelected(task.id, a) : isSelectedMant(a);
@@ -1701,7 +1710,7 @@ function renderPeriodTracker(task){
     return `<button class="p-apto-chip" data-id="${esc(task.id)}" data-target="${esc(a)}" style="border:1px solid #e4dfd4;background:#f4f1ea;color:#8a7f66;border-radius:10px;padding:7px 12px;margin:3px;font-size:13px;font-weight:700;cursor:pointer">${esc(a)}${tipoTag(tipo)} \u00b7 poner en el parte</button>`;
   }).join('');
   const pendN = targets.length - targets.filter(({hab:a}) => periodIsDone(task, win, a) || isSelected(a)).length;
-  box.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px">${pendN} sin agregar de ${targets.length} apto${targets.length===1?'':'s'} con movimiento hoy:</div><div style="display:flex;flex-wrap:wrap">${chips}</div>`;
+  box.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px">${pendN} sin agregar de ${targets.length} apto${targets.length===1?'':'s'} disponible${targets.length===1?'':'s'} hoy (con movimiento o libre):</div><div style="display:flex;flex-wrap:wrap">${chips}</div>`;
   wireAptoChipsFor(task);
   box.querySelectorAll('.p-apto-undo').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -1965,12 +1974,23 @@ function loadState(){
   let st = null;
   try{ const raw = localStorage.getItem(SKEY); if (raw) st = deserialize(raw); }catch(e){}
   if (!st) return;
+  const savedBaseISO = st.baseISO || (st.tareasISO ? toISO(addDays(fromISO(st.tareasISO), -1)) : null);
+  /* si lo último guardado fue para un "Día base" ANTERIOR a hoy, son listados de un día que ya pasó:
+     los descartamos en vez de restaurarlos, para que no confundan con salidas/llegadas viejas. */
+  if (savedBaseISO && fromISO(savedBaseISO) < todayLocal){
+    $('refDate').value = toISO(todayLocal);
+    syncTareasDate();
+    const box = $('restored');
+    box.textContent = `Se encontraron listados guardados del ${fmtShort(fromISO(savedBaseISO))} (ya pasó) — se descartaron solos para que no se mezclen con el día de hoy. Cargá los informes actuales para armar el parte de mañana.`;
+    box.style.background = '#fdf0d9'; box.style.borderColor = '#eccb8f'; box.style.color = '#8a5a10';
+    box.style.display = 'block';
+    return;
+  }
   tasks = st.tasks || [];
   guests = st.guests || [];
   if (st.notesTareas) $('notesTareas').value = st.notesTareas;
   if (st.notesCal) $('notesCal').value = st.notesCal;
-  if (st.baseISO){ $('refDate').value = st.baseISO; }
-  else if (st.tareasISO){ $('refDate').value = toISO(addDays(fromISO(st.tareasISO), -1)); }   /* versiones viejas */
+  if (savedBaseISO) $('refDate').value = savedBaseISO;
   syncTareasDate();
   archivedISO = st.archivedISO || null;
   if (st.chips){
