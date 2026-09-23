@@ -1266,6 +1266,10 @@ function mantDerive(){
     if (t.tipo === 'llegada' && t.esSalida) puntualHabs.add(t.hab);   /* turnover: ventana salida->llegada */
     else if (t.tipo === 'salida') departureHabs.add(t.hab);          /* se vacia y no se re-ocupa hoy */
   }
+  /* además de ventana/vacío, los aptos sin huésped ni movimiento hoy están libres todo el día
+     (igual que en Mantenimiento preventivo) — Diego también los puede usar para trabajar tranquilo */
+  const ocupadosOconMov = new Set([...puntualHabs, ...departureHabs, ...guests.map(g => g.hab)]);
+  const libreHabs = new Set(ALL_HABS.filter(h => !ocupadosOconMov.has(h)));
   const dref = tareasDate();
   const puntual = [...puntualHabs].sort(cmpHab).map(h => {
     const pend = pendingPeriodTasks('mantenimiento', dref, h).map(x => x.task.label);
@@ -1275,7 +1279,11 @@ function mantDerive(){
     const pendPeriod = pendingPeriodTasks('mantenimiento', dref, h).map(x => x.task.label);
     return { hab:h, huesped:(taskByHab[h]||{}).huesped || '', pend: pendPeriod };
   });
-  return { puntual, general };
+  const libre = [...libreHabs].sort(cmpHab).map(h => {
+    const pendPeriod = pendingPeriodTasks('mantenimiento', dref, h).map(x => x.task.label);
+    return { hab:h, huesped:'', pend: pendPeriod };
+  });
+  return { puntual, general, libre };
 }
 function mpKey(){ return 'art-mantparte-' + tareasISO; }
 function mpState(){ return lsGet(mpKey(), { notas:{}, general:{}, extras:[], hidden:[], manual:{ shared:[], porApto:{} } }); }
@@ -1382,12 +1390,14 @@ function mantParteSnapshot(){
     .filter(x => x.nota.trim() || x.tareas.length);
   const general = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabs.has(x.hab))
     .map(x => ({ hab:x.hab, tareas:genSel(mp, x) })).filter(x => x.tareas.length);
+  const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabs.has(x.hab))
+    .map(x => ({ hab:x.hab, tareas:genSel(mp, x) })).filter(x => x.tareas.length);
   const extras = (mp.extras || []).slice();
   const man = mp.manual || { shared:[], porApto:{} };
   const compartidas = dailyMantTasks().concat(hid.has('shared|_general') ? [] : (man.shared || []));
   const manual = Object.keys(man.porApto || {}).filter(h => !hid.has('manual|'+h))
     .map(h => ({ hab:h, ctx:autoCtxHab(h), tareas:man.porApto[h].tareas || [] }));
-  return { fecha:tareasISO, generatedAt:Date.now(), puntual, general, cliente:[], extras, compartidas, manual };
+  return { fecha:tareasISO, generatedAt:Date.now(), puntual, general, libre, cliente:[], extras, compartidas, manual };
 }
 function publishMantParte(force){
   if (!sb) return;
@@ -1434,7 +1444,7 @@ function renderMantParte(){
 
   /* aptos con selección guardada de ESTE día que ya no aparecen entre los candidatos de hoy
      (porque se cargaron informes nuevos desde que se armó este parte) — igual hay que poder editarlos */
-  const knownHabs = new Set([...punt.map(x=>x.hab), ...(der.general||[]).map(x=>x.hab), ...manApts]);
+  const knownHabs = new Set([...punt.map(x=>x.hab), ...(der.general||[]).map(x=>x.hab), ...(der.libre||[]).map(x=>x.hab), ...manApts]);
   const orphanHabs = new Set();
   Object.keys(mp.general||{}).forEach(h => { if (!knownHabs.has(h) && !hid.has('orphan|'+h) && (mp.general[h]||[]).length) orphanHabs.add(h); });
   Object.keys(mp.notas||{}).forEach(h => { if (!knownHabs.has(h) && !hid.has('orphan|'+h) && (mp.notas[h]||'').trim()) orphanHabs.add(h); });
@@ -1468,13 +1478,27 @@ function renderMantParte(){
   const gen = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabsUI.has(x.hab));
   html += H(`\ud83d\udee0\ufe0f General \u2014 aptos que se vac\u00edan <span style="color:var(--ink-soft)">(${gen.length})</span>`);
   html += '<div class="hint" style="text-align:left;margin-bottom:8px">Las tareas preventivas se agregan desde <b>Peri\u00f3dicas \u2192 Mant. preventivo</b>. Ac\u00e1 solo se muestran, ya elegidas.</div>';
-  if (!gen.length) html += '<div class="none" style="display:block">No hay aptos vaci\u00e1ndose con pendientes.</div>';
+  if (!gen.length) html += '<div class="none" style="display:block">No hay aptos vaci\u00e1ndose hoy.</div>';
   else html += gen.map(x => {
     const sel = genSel(mp, x);
     const chips = sel.map(t => `<span style="display:inline-block;border:1px solid #bfe6cd;background:#e7f5ec;color:#128a4a;border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600">\u2713 ${esc(t)}</span>`).join('');
     return cardWrap(
       delBtn('general', x.hab) +
       `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">vac\u00edo</span>` +
+      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>')
+    );
+  }).join('');
+
+  const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabsUI.has(x.hab));
+  html += H(`\ud83d\udd35 Libres \u2014 sin hu\u00e9sped ni movimiento hoy <span style="color:var(--ink-soft)">(${libre.length})</span>`);
+  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Aptos vac\u00edos todo el d\u00eda, sin apuro de horario \u2014 c\u00f3modos para Diego. Las tareas preventivas se agregan desde <b>Peri\u00f3dicas \u2192 Mant. preventivo</b>.</div>';
+  if (!libre.length) html += '<div class="none" style="display:block">No hay aptos libres hoy.</div>';
+  else html += libre.map(x => {
+    const sel = genSel(mp, x);
+    const chips = sel.map(t => `<span style="display:inline-block;border:1px solid #bfe6cd;background:#e7f5ec;color:#128a4a;border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600">\u2713 ${esc(t)}</span>`).join('');
+    return cardWrap(
+      delBtn('libre', x.hab) +
+      `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">libre</span>` +
       (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>')
     );
   }).join('');
