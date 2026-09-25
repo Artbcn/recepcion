@@ -434,14 +434,6 @@ tr.has-fondo td{background:#FEFBF5}
  </div>
  <button id="btnReset" title="Borra los informes cargados y las tareas en pantalla. El historial no se toca.">🗑 Borrar todo</button>
  <button id="btnInstall">⤓ Instalar app</button>
- <div id="draftBar" style="display:flex;align-items:center;gap:10px;margin-left:auto;background:#1c414a;border-radius:10px;padding:6px 10px">
-   <label style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:#fff;cursor:pointer;user-select:none">
-     <input type="checkbox" id="chkDraft" style="width:16px;height:16px">
-     Modo borrador (no le cambia el parte al equipo hasta que publique)
-   </label>
-   <span id="draftDirty" style="display:none;font-size:11px;font-weight:800;color:#ffd479;white-space:nowrap">● cambios sin publicar</span>
-   <button id="btnPublishNow" style="display:none;background:#2fae9f;color:#fff;border:none;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;white-space:nowrap">📤 Publicar cambios al equipo</button>
- </div>
 </header>
 
 <div class="wrap">
@@ -794,39 +786,6 @@ function showSyncBanner(){
 }
 /* ==================== fin sincronización Supabase ==================== */
 
-/* ==================== MODO BORRADOR ====================
-   Mientras está activado, los cambios NO se publican al parte que ve el
-   equipo (limp_parte / mant_parte) — así podés seguir cargando informes
-   y editando sin pisarle la lista a la chica de limpieza ni al chico de
-   mantenimiento mientras están trabajando. Publicás vos cuando quieras
-   con el botón "Publicar cambios al equipo". */
-let draftMode = localStorage.getItem('art-draft-mode') === '1';
-let draftDirty = false;
-function setDraftMode(v){
-  draftMode = v;
-  try{ localStorage.setItem('art-draft-mode', v ? '1' : '0'); }catch(e){}
-  if (!v){ draftDirty = false; }
-  paintDraftBar();
-}
-function markDraftDirty(){ if (draftMode){ draftDirty = true; paintDraftBar(); } }
-function paintDraftBar(){
-  const chk = document.getElementById('chkDraft'); if (chk) chk.checked = draftMode;
-  const dot = document.getElementById('draftDirty'); if (dot) dot.style.display = (draftMode && draftDirty) ? 'inline' : 'none';
-  const btn = document.getElementById('btnPublishNow'); if (btn) btn.style.display = draftMode ? 'inline-block' : 'none';
-}
-function publishAllNow(){
-  publishParte(true);
-  publishMantParte(true);
-  draftDirty = false;
-  paintDraftBar();
-}
-document.addEventListener('DOMContentLoaded', () => {
-  paintDraftBar();
-  const chk = document.getElementById('chkDraft'); if (chk) chk.addEventListener('change', () => setDraftMode(chk.checked));
-  const btn = document.getElementById('btnPublishNow'); if (btn) btn.addEventListener('click', publishAllNow);
-});
-/* ==================== fin modo borrador ==================== */
-
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 /* serialización que respeta las fechas (Date) */
@@ -1112,7 +1071,6 @@ function parteSnapshot(){
 }
 function publishParte(force){
   if (!sb) return;
-  if (draftMode && !force){ markDraftDirty(); return; }
   try{
     const snap = parteSnapshot();
     if (!snap.pisos.length && !snap.toallas.length && !snap.clientes.length) return;
@@ -1416,7 +1374,6 @@ function mantParteSnapshot(){
 }
 function publishMantParte(force){
   if (!sb) return;
-  if (draftMode && !force){ markDraftDirty(); return; }
   try{
     const snap = mantParteSnapshot();
     sb.from('mant_parte').upsert({ fecha:snap.fecha, data:snap, updated_at:new Date().toISOString() })
