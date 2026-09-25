@@ -717,14 +717,22 @@ localStorage.removeItem = function(k){
   if (sb && typeof k === 'string' && k.startsWith(SB_PREFIX)) sbDel(k);
 };
 
-/* al arrancar: bajamos lo compartido a localStorage ANTES de cargar el estado (con el setter original, sin re-subirlo) */
+/* al arrancar: bajamos lo compartido a localStorage ANTES de cargar el estado (con el setter original, sin re-subirlo).
+   Devuelve true/false según si se pudo bajar de verdad — si no se puede, NO hay que confiar en lo local
+   ni publicarlo, porque podría ser viejo y pisarle el trabajo a la otra persona. */
 async function sbHydrate(){
-  if (!sb) return;
-  try{
-    const { data, error } = await sb.from('limp_kv').select('k,v');
-    if (error || !data) return;
-    for (const row of data){ try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){} }
-  }catch(e){}
+  if (!sb) return true;   /* sin Supabase configurado, no hay nada compartido que bajar: seguimos igual que siempre */
+  for (let intento = 0; intento < 3; intento++){
+    try{
+      const { data, error } = await sb.from('limp_kv').select('k,v');
+      if (error || !data) throw error || new Error('sin datos');
+      for (const row of data){ try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){} }
+      return true;
+    }catch(e){
+      if (intento < 2) await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+  return false;
 }
 /* escuchamos los cambios de la otra PC. No recargamos de golpe (para no cortarte si estás escribiendo):
    mostramos un aviso abajo y vos tocás para ver los cambios. */
@@ -3815,13 +3823,17 @@ $('notesCal').addEventListener('input', saveState);
 
 /* arranque: recuperar lo de la sesión anterior */
 (async function boot(){
-  await sbHydrate();          /* bajamos lo compartido (no hace nada si Supabase no está configurado) */
+  const sincronizado = await sbHydrate();   /* bajamos lo compartido (true si Supabase no está configurado, o si bajó bien) */
   bootDone = true;
   loadState();
   seedFondoFechas();
   migrateFondoFechasOnce();
-  publishParte();             /* publicamos el parte actual para la app de limpieza */
-  publishMantParte();         /* y el parte de mantenimiento */
+  if (sincronizado){
+    publishParte();             /* publicamos el parte actual para la app de limpieza */
+    publishMantParte();         /* y el parte de mantenimiento */
+  } else {
+    showError('No pude bajar lo que cargó tu compañera (se cortó la conexión al abrir). Por las dudas, NO publiqué nada — así no le piso el trabajo a nadie. Recargá la página (Ctrl+Shift+R) antes de tocar algo.');
+  }
   renderHist();
   renderFondo();
   renderFondoBanner();
