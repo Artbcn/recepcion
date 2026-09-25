@@ -690,8 +690,43 @@ try{ if (SB_URL && SB_KEY && window.supabase){ sb = window.supabase.createClient
 const _lsSet    = localStorage.setItem.bind(localStorage);
 const _lsRemove = localStorage.removeItem.bind(localStorage);
 
+/* 'art-state' es el bloque grande (tasks + guests): si las dos computadoras están abiertas a la vez,
+   la que guarda último pisaría por completo a la otra sin avisar. Para evitarlo, guardamos qué tan
+   "al día" estamos (el savedAt que ya conocemos) y, antes de subir, chequeamos que nadie haya guardado
+   algo más nuevo mientras tanto. Si alguien lo hizo, NO subimos (para no perder su trabajo) y avisamos fuerte. */
+let knownStateSavedAt = 0;
+async function sbPushState(k, valStr){
+  let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
+  const miSavedAt = (v && v.savedAt) || 0;
+  try{
+    const { data } = await sb.from('limp_kv').select('v').eq('k', k).maybeSingle();
+    const remotoSavedAt = (data && data.v && data.v.savedAt) || 0;
+    if (remotoSavedAt > knownStateSavedAt){
+      showConflictWarning();
+      return;   /* alguien guardó algo más nuevo que lo último que vimos: no lo pisamos */
+    }
+  }catch(e){ /* si no pudimos chequear, mejor no arriesgarnos a pisar */ showConflictWarning(); return; }
+  try{
+    const { error } = await sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: new Date().toISOString() });
+    if (error) throw error;
+    knownStateSavedAt = miSavedAt;
+  }catch(e){ showConflictWarning(); }
+}
+function showConflictWarning(){
+  let b = document.getElementById('sbConflictBanner');
+  if (!b){
+    b = document.createElement('div');
+    b.id = 'sbConflictBanner';
+    b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:10000;background:#C0392B;color:#fff;padding:14px 16px;text-align:center;font-weight:700;cursor:pointer;box-shadow:0 -2px 10px rgba(0,0,0,.3)';
+    b.textContent = '⚠️ Tu compañera guardó algo más nuevo mientras editabas — tus últimos cambios NO se subieron. Tocá acá para recargar y ver lo de ella antes de seguir.';
+    b.addEventListener('click', () => location.reload());
+    document.body.appendChild(b);
+  }
+  b.style.display = 'block';
+}
 function sbPush(k, valStr){
   if (!sb) return;
+  if (k === SKEY){ sbPushState(k, valStr); return; }
   let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
   sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: new Date().toISOString() }).then(()=>{}, ()=>{});
 }
@@ -718,7 +753,10 @@ async function sbHydrate(){
     try{
       const { data, error } = await sb.from('limp_kv').select('k,v');
       if (error || !data) throw error || new Error('sin datos');
-      for (const row of data){ try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){} }
+      for (const row of data){
+        try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){}
+        if (row.k === SKEY && row.v && row.v.savedAt) knownStateSavedAt = row.v.savedAt;
+      }
       return true;
     }catch(e){
       if (intento < 2) await new Promise(r => setTimeout(r, 1000));
