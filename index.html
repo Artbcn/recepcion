@@ -2154,13 +2154,15 @@ function loadState(){
   try{ const raw = localStorage.getItem(SKEY); if (raw) st = deserialize(raw); }catch(e){}
   if (!st) return;
   const savedBaseISO = st.baseISO || (st.tareasISO ? toISO(addDays(fromISO(st.tareasISO), -1)) : null);
-  /* si lo último guardado fue para un "Día base" ANTERIOR a hoy, son listados de un día que ya pasó:
-     los descartamos en vez de restaurarlos, para que no confundan con salidas/llegadas viejas. */
-  if (savedBaseISO && fromISO(savedBaseISO) < todayLocal){
+  /* el parte real es para "Día base" + 1. Si ESE día (no el Día base en sí) ya pasó, son listados
+     de un parte que ya se usó y quedó atrás — recién ahí los descartamos. Si el parte guardado es
+     para HOY o más adelante (lo normal: alguien lo preparó el día anterior), lo mantenemos igual. */
+  const savedTareasISO = savedBaseISO ? toISO(addDays(fromISO(savedBaseISO), 1)) : null;
+  if (savedTareasISO && fromISO(savedTareasISO) < todayLocal){
     $('refDate').value = toISO(todayLocal);
     syncTareasDate();
     const box = $('restored');
-    box.textContent = `Se encontraron listados guardados del ${fmtShort(fromISO(savedBaseISO))} (ya pasó) — se descartaron solos para que no se mezclen con el día de hoy. Cargá los informes actuales para armar el parte de mañana.`;
+    box.textContent = `Se encontraron listados guardados para el ${fmtShort(fromISO(savedTareasISO))} (ya pasó) — se descartaron solos para que no se mezclen con el día de hoy. Cargá los informes actuales para armar el parte de mañana.`;
     box.style.background = '#fdf0d9'; box.style.borderColor = '#eccb8f'; box.style.color = '#8a5a10';
     box.style.display = 'block';
     return;
