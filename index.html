@@ -892,7 +892,50 @@ const fromISO = iso => { const [y,m,d] = String(iso).split('-').map(Number); ret
 const todayLocal = new Date(); todayLocal.setHours(0,0,0,0);
 $('refDate').value = toISO(todayLocal);
 function refDate(){ return fromISO($('refDate').value); }
+
+/* ===== guardado por "Día base": un juego de listados propio para cada fecha =====
+   Antes había un solo juego de tasks/guests activo; si cambiabas de Día base y cargabas
+   otros informes, se perdía lo anterior. Ahora cada fecha guarda su propia copia, y al
+   volver a esa fecha se restaura tal cual quedó — sin pisar lo de otro día. */
+const BASES_KEY = 'art-bases';
+let currentBaseISO = $('refDate').value;
+function saveBaseSnapshot(baseISO){
+  if (!baseISO) return;
+  const store = lsGet(BASES_KEY, {});
+  store[baseISO] = {
+    tasks, guests,
+    chips: { arr: chipName('chip-arr'), dep: chipName('chip-dep'), inh: chipName('chip-inh') },
+    notesTareas: $('notesTareas') ? $('notesTareas').value : '',
+    savedAt: Date.now()
+  };
+  const keys = Object.keys(store).sort();
+  while (keys.length > 21){ delete store[keys.shift()]; }   /* guardamos hasta 3 semanas, para no crecer sin límite */
+  lsSet(BASES_KEY, store);
+}
+function resetChipUI(id){
+  const c = $(id); if (!c) return;
+  c.querySelector('.fn').textContent = '—';
+  c.classList.remove('ok');
+}
+
 $('refDate').addEventListener('change', () => {
+  const newBaseISO = $('refDate').value;
+  if (currentBaseISO && (tasks.length || guests.length)) saveBaseSnapshot(currentBaseISO);
+  const store = lsGet(BASES_KEY, {});
+  const snap = store[newBaseISO];
+  if (snap){
+    tasks = snap.tasks || []; guests = snap.guests || [];
+    if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
+    ['chip-arr','chip-dep','chip-inh'].forEach((id,i) => {
+      const txt = snap.chips && [snap.chips.arr, snap.chips.dep, snap.chips.inh][i];
+      if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt); else resetChipUI(id);
+    });
+  } else {
+    tasks = []; guests = [];
+    $('notesTareas').value = '';
+    ['chip-arr','chip-dep','chip-inh'].forEach(resetChipUI);
+  }
+  currentBaseISO = newBaseISO;
   const prev = syncTareasDate();
   /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
   if (prev !== tareasISO && archivedISO === prev){
@@ -900,7 +943,8 @@ $('refDate').addEventListener('change', () => {
     archivedISO = null;
   }
   renderCal(); renderHoy(); saveState(); renderHist();
-  if (tasks.length) renderTareas();
+  if (tasks.length){ renderTareas(); }
+  else { $('tareasHint').style.display = 'block'; $('tareasBody').style.display = 'none'; renderPextras(); }
 });
 
 /* fecha del informe: SIEMPRE la fecha base de arriba + 1 día. No se edita a mano:
@@ -1033,6 +1077,7 @@ function saveState(){
   };
   try{ localStorage.setItem(SKEY, serialize(st)); }
   catch(e){ showError('No pude guardar los datos: el navegador se quedó sin espacio. Bajá el Excel del historial y borrá días viejos en la pestaña Historial.'); }
+  saveBaseSnapshot(currentBaseISO || $('refDate').value);
   archiveDay();
   publishParte();
 }
@@ -2163,6 +2208,7 @@ function loadState(){
   const savedTareasISO = savedBaseISO ? toISO(addDays(fromISO(savedBaseISO), 1)) : null;
   if (savedTareasISO && fromISO(savedTareasISO) < todayLocal){
     $('refDate').value = toISO(todayLocal);
+    currentBaseISO = toISO(todayLocal);
     syncTareasDate();
     const box = $('restored');
     box.textContent = `Se encontraron listados guardados para el ${fmtShort(fromISO(savedTareasISO))} (ya pasó) — se descartaron solos para que no se mezclen con el día de hoy. Cargá los informes actuales para armar el parte de mañana.`;
@@ -2175,6 +2221,7 @@ function loadState(){
   if (st.notesTareas) $('notesTareas').value = st.notesTareas;
   if (st.notesCal) $('notesCal').value = st.notesCal;
   if (savedBaseISO) $('refDate').value = savedBaseISO;
+  currentBaseISO = $('refDate').value;
   syncTareasDate();
   archivedISO = st.archivedISO || null;
   if (st.chips){
