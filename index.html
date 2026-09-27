@@ -1453,7 +1453,7 @@ function mantParteSnapshot(){
   const compartidas = dailyMantTasks().concat(hid.has('shared|_general') ? [] : (man.shared || []));
   const manual = Object.keys(man.porApto || {}).filter(h => !hid.has('manual|'+h))
     .map(h => ({ hab:h, ctx:autoCtxHab(h), tareas:man.porApto[h].tareas || [] }));
-  return { fecha:tareasISO, generatedAt:Date.now(), puntual, general, libre, cliente:[], extras, compartidas, manual };
+  return { fecha:tareasISO, generatedAt:Date.now(), instrucciones:(mp.instrucciones || ''), puntual, general, libre, cliente:[], extras, compartidas, manual };
 }
 function publishMantParte(force){
   if (!sb) return;
@@ -1473,6 +1473,10 @@ function renderMantParte(){
   const delBtn = (kind,hab) => `<button class="mp-del" data-kind="${kind}" data-hab="${esc(hab)}" style="border:none;background:transparent;color:#c0392b;cursor:pointer;font-size:15px;float:right">\u2715</button>`;
   let html = '<div style="font-size:19px;font-weight:800;margin-bottom:2px">Parte de mantenimiento del d\u00eda</div>';
   html += `<div style="color:var(--ink-soft);font-size:12.5px;margin-bottom:8px">se arma solo desde los informes \u00b7 al chico solo le llega lo que cargues</div>`;
+
+  html += H('\ud83d\udce2 Instrucciones para hoy');
+  html += `<div class="hint" style="text-align:left;margin-bottom:8px">Un mensaje libre que Diego ve arriba de todas sus tareas al abrir su app (ej: "pas\u00e1 por la ferreter\u00eda a comprar silicona antes de empezar").</div>`;
+  html += `<textarea id="mpInstrucciones" rows="3" placeholder="ej: pas\u00e1 por la ferreter\u00eda a comprar material para reparaciones..." style="width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-family:inherit;font-size:14px;box-sizing:border-box">${esc(mp.instrucciones || '')}</textarea>`;
 
   const manHabsUI = new Set(Object.keys((mp.manual && mp.manual.porApto) || {}));
   const punt = der.puntual.filter(x => !hid.has('puntual|'+x.hab) && !manHabsUI.has(x.hab));
@@ -1615,6 +1619,8 @@ function renderMantParte(){
 
   const rep = () => { renderMantParte(); publishMantParte(); };
   box.querySelectorAll('.mp-nota').forEach(inp => { let t=null; inp.addEventListener('input', () => { clearTimeout(t); t=setTimeout(()=>{ const o=mpState(); o.notas[inp.dataset.hab]=inp.value; saveMp(o); publishMantParte(); },500); }); });
+  const instrInp = document.getElementById('mpInstrucciones');
+  if (instrInp){ let t=null; instrInp.addEventListener('input', () => { clearTimeout(t); t=setTimeout(()=>{ const o=mpState(); o.instrucciones=instrInp.value; saveMp(o); publishMantParte(); },500); }); }
   box.querySelectorAll('.mp-gen').forEach(btn => btn.addEventListener('click', () => {
     const o=mpState(); const hab=btn.dataset.hab, task=btn.dataset.task;
     if (o.general[hab] === undefined){ const d = mantDerive().general.find(g => g.hab === hab); o.general[hab] = d ? d.pend.slice() : []; }
