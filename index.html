@@ -935,6 +935,19 @@ $('refDate').addEventListener('change', () => {
     $('notesTareas').value = '';
     ['chip-arr','chip-dep','chip-inh'].forEach(resetChipUI);
   }
+  /* Los huéspedes alojados (In House) sirven para proyectar toallas y limpiezas de cliente hacia días
+     futuros. Si este día todavía no tiene su propio In House, heredamos el más reciente de un día
+     anterior — así podés ir adelantando el parte sin volver a cargar el mismo archivo. Las tareas
+     de pisos (llegadas/salidas) NO se heredan: esas son propias de cada día. */
+  if (!guests.length){
+    const previos = Object.keys(store).filter(k => k < newBaseISO && (store[k].guests || []).length).sort();
+    if (previos.length){
+      const origen = previos[previos.length - 1];
+      guests = store[origen].guests;
+      const nombre = (store[origen].chips && store[origen].chips.inh && store[origen].chips.inh !== '—') ? store[origen].chips.inh : 'In House';
+      setChip('chip-inh', `(heredado del ${fmtShort(fromISO(origen))}) ${nombre}`);
+    }
+  }
   currentBaseISO = newBaseISO;
   const prev = syncTareasDate();
   /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
