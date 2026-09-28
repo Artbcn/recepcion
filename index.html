@@ -726,9 +726,33 @@ function showConflictWarning(){
 }
 function sbPush(k, valStr){
   if (!sb) return;
-  if (k === SKEY){ sbPushState(k, valStr); return; }
+  if (k === 'art-state'){ sbPushState(k, valStr); return; }
+  if (k === 'art-bases'){ sbPushBases(k, valStr); return; }
   let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
   sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: new Date().toISOString() }).then(()=>{}, ()=>{});
+}
+/* 'art-bases' guarda un juego de listados por cada Día base. Si se subiera el bloque entero, una computadora
+   con una copia vieja pisaría los días que la otra ya cargó. Por eso fusionamos día por día: gana siempre la
+   versión más nueva (savedAt) de cada fecha, y lo local queda igual a lo compartido. */
+async function sbPushBases(k, valStr){
+  let mio; try{ mio = JSON.parse(valStr); }catch(e){ return; }
+  try{
+    const { data } = await sb.from('limp_kv').select('v').eq('k', k).maybeSingle();
+    const fusion = Object.assign({}, (data && data.v) || {});
+    for (const [dia, snap] of Object.entries(mio)){
+      if (!fusion[dia] || (snap.savedAt || 0) >= (fusion[dia].savedAt || 0)) fusion[dia] = snap;
+    }
+    const claves = Object.keys(fusion).sort();
+    while (claves.length > 21) delete fusion[claves.shift()];
+    const { error } = await sb.from('limp_kv').upsert({ k, v: fusion, src: SB_TAB, updated_at: new Date().toISOString() });
+    if (error) return;
+    /* traemos a lo local los días que solo estaban en lo compartido, sin perder lo que se escribió mientras tanto */
+    let actual = {}; try{ actual = JSON.parse(localStorage.getItem(k) || '{}'); }catch(e){}
+    for (const [dia, snap] of Object.entries(fusion)){
+      if (!actual[dia] || (snap.savedAt || 0) > (actual[dia].savedAt || 0)) actual[dia] = snap;
+    }
+    _lsSet(k, JSON.stringify(actual));
+  }catch(e){}
 }
 function sbDel(k){
   if (!sb) return;
