@@ -948,6 +948,9 @@ $('refDate').addEventListener('change', () => {
       setChip('chip-inh', `(heredado del ${fmtShort(fromISO(origen))}) ${nombre}`);
     }
   }
+  /* Arrival y Departure son propios de cada día: no deben arrastrarse de un Día base al siguiente
+     (si no, la "red de seguridad" de buildTasks usaría filas viejas). Solo el In House se hereda. */
+  arrivalRows = null; departureRows = null;
   currentBaseISO = newBaseISO;
   const prev = syncTareasDate();
   /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
