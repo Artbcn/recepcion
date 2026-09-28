@@ -917,6 +917,24 @@ function resetChipUI(id){
   c.querySelector('.fn').textContent = '—';
   c.classList.remove('ok');
 }
+/* Si el Día base actual no tiene In House propio (guests vacío), toma el más reciente de un día anterior.
+   Devuelve true si heredó algo. Se llama al cambiar de Día base Y al abrir la app, porque la app puede
+   abrirse ya parada en un día vacío. Conserva el nombre y la fecha ORIGINALES del archivo (sin anidar avisos). */
+function heredarInHouse(){
+  if (guests.length) return false;
+  const base = $('refDate').value;
+  const store = lsGet(BASES_KEY, {});
+  const previos = Object.keys(store).filter(k => k < base && (store[k].guests || []).length).sort();
+  if (!previos.length) return false;
+  const origen = previos[previos.length - 1];
+  guests = store[origen].guests;
+  let nombre = (store[origen].chips && store[origen].chips.inh && store[origen].chips.inh !== '—') ? store[origen].chips.inh : 'In House';
+  let fechaOrigen = fmtShort(fromISO(origen));
+  const m = /^\(heredado del (\d\d\/\d\d)\)\s*(.*)$/.exec(nombre);   /* ya venía heredado: nos quedamos con el origen real */
+  if (m){ fechaOrigen = m[1]; nombre = m[2] || 'In House'; }
+  setChip('chip-inh', `(heredado del ${fechaOrigen}) ${nombre}`);
+  return true;
+}
 
 $('refDate').addEventListener('change', () => {
   const newBaseISO = $('refDate').value;
@@ -939,15 +957,7 @@ $('refDate').addEventListener('change', () => {
      futuros. Si este día todavía no tiene su propio In House, heredamos el más reciente de un día
      anterior — así podés ir adelantando el parte sin volver a cargar el mismo archivo. Las tareas
      de pisos (llegadas/salidas) NO se heredan: esas son propias de cada día. */
-  if (!guests.length){
-    const previos = Object.keys(store).filter(k => k < newBaseISO && (store[k].guests || []).length).sort();
-    if (previos.length){
-      const origen = previos[previos.length - 1];
-      guests = store[origen].guests;
-      const nombre = (store[origen].chips && store[origen].chips.inh && store[origen].chips.inh !== '—') ? store[origen].chips.inh : 'In House';
-      setChip('chip-inh', `(heredado del ${fmtShort(fromISO(origen))}) ${nombre}`);
-    }
-  }
+  heredarInHouse();
   /* Arrival y Departure son propios de cada día: no deben arrastrarse de un Día base al siguiente
      (si no, la "red de seguridad" de buildTasks usaría filas viejas). Solo el In House se hereda. */
   arrivalRows = null; departureRows = null;
@@ -1173,8 +1183,15 @@ function publishParte(force){
   try{
     const snap = parteSnapshot();
     if (!snap.pisos.length && !snap.toallas.length && !snap.clientes.length) return;
-    sb.from('limp_parte').upsert({ fecha: snap.fecha, data: snap, updated_at: new Date().toISOString() })
+    const subir = () => sb.from('limp_parte').upsert({ fecha: snap.fecha, data: snap, updated_at: new Date().toISOString() })
       .then(({error}) => { if (error) showError('No se pudo publicar el parte de limpieza (' + error.message + '). Volvé a intentar el cambio.'); }, () => { showError('No se pudo publicar el parte de limpieza (sin conexión). Volvé a intentar el cambio.'); });
+    if (snap.pisos.length){ subir(); return; }
+    /* sin pisos cargados en esta sesión (p. ej. solo hay toallas heredadas del In House): si ese día ya tiene
+       pisos publicados, NO los pisamos con una lista vacía — es lo que armó otra sesión o la otra persona. */
+    sb.from('limp_parte').select('data').eq('fecha', snap.fecha).maybeSingle().then(({data}) => {
+      const yaTienePisos = data && data.data && (data.data.pisos || []).length > 0;
+      if (!yaTienePisos) subir();
+    }, () => {});
   }catch(e){}
 }
 
@@ -3890,6 +3907,7 @@ $('notesCal').addEventListener('input', saveState);
   const sincronizado = await sbHydrate();   /* bajamos lo compartido (true si Supabase no está configurado, o si bajó bien) */
   bootDone = true;
   loadState();
+  if (heredarInHouse()){ renderCal(); renderHoy(); }   /* si la app abre parada en un día sin In House propio */
   seedFondoFechas();
   migrateFondoFechasOnce();
   if (sincronizado){
