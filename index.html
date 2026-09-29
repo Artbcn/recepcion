@@ -2511,9 +2511,8 @@ function buildTasks(){
       t.cama = (!SOFA_EXCL.has(String(t.hab)) && totalPax > 2) ? 'montar sofá cama' : '';
     }
   });
-  /* informes nuevos = día nuevo: la base vuelve a hoy, así el informe sale para mañana */
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  setBaseDate(hoy);
+  /* el informe se arma para el Día base que ya esté seleccionado — no lo tocamos, así podés
+     volver a un día anterior y cargar/actualizar sus informes sin que te salte a hoy. */
   archivedISO = null;
   renderTareas();
   saveState();
