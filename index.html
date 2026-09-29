@@ -949,7 +949,12 @@ $('refDate').addEventListener('change', () => {
   const newBaseISO = $('refDate').value;
   if (currentBaseISO && (tasks.length || guests.length)) saveBaseSnapshot(currentBaseISO);
   const store = getBases();
-  const snap = store[newBaseISO];
+  let snap = store[newBaseISO];
+  if (snap && (snap.tasks || []).some(t => (t.llegada && !(t.llegada instanceof Date)) || (t.salida && !(t.salida instanceof Date)))){
+    delete store[newBaseISO]; setBases(store);
+    snap = null;
+    showError(`Los listados guardados para el ${fmtShort(addDays(fromISO(newBaseISO),1))} estaban en un formato viejo y se descartaron solos. Volvé a soltar Arrival y Departure de ese día.`);
+  }
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
     if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
@@ -2277,7 +2282,14 @@ function loadState(){
   }
   /* los listados propios de esta fecha, si ya existen guardados por día */
   const bases = getBases();
-  const snap = savedBaseISO ? bases[savedBaseISO] : null;
+  let snap = savedBaseISO ? bases[savedBaseISO] : null;
+  /* si quedó guardado con el formato viejo (de antes de este arreglo), las fechas son texto en vez
+     de Date y rompían la tabla. Lo detectamos y lo tiramos, para que no vuelva a pasar. */
+  if (snap && (snap.tasks || []).some(t => (t.llegada && !(t.llegada instanceof Date)) || (t.salida && !(t.salida instanceof Date)))){
+    delete bases[savedBaseISO]; setBases(bases);
+    snap = null;
+    showError(`Los listados guardados para el ${fmtShort(addDays(fromISO(savedBaseISO),1))} estaban en un formato viejo y se descartaron solos. Volvé a soltar Arrival y Departure de ese día.`);
+  }
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
     if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
