@@ -903,9 +903,14 @@ function refDate(){ return fromISO($('refDate').value); }
    volver a esa fecha se restaura tal cual quedó — sin pisar lo de otro día. */
 const BASES_KEY = 'art-bases';
 let currentBaseISO = $('refDate').value;
+/* art-bases guarda tasks/guests, que tienen objetos Date adentro (llegada, salida...).
+   lsGet/lsSet usan JSON normal y los convertirían en texto, rompiendo la tabla — por eso
+   estos dos usan el mismo serializador con fechas que ya usa el resto de la app. */
+function getBases(){ try{ const raw = localStorage.getItem(BASES_KEY); return raw ? deserialize(raw) : {}; }catch(e){ return {}; } }
+function setBases(store){ try{ localStorage.setItem(BASES_KEY, serialize(store)); }catch(e){} }
 function saveBaseSnapshot(baseISO){
   if (!baseISO) return;
-  const store = lsGet(BASES_KEY, {});
+  const store = getBases();
   store[baseISO] = {
     tasks, guests,
     chips: { arr: chipName('chip-arr'), dep: chipName('chip-dep'), inh: chipName('chip-inh') },
@@ -914,7 +919,7 @@ function saveBaseSnapshot(baseISO){
   };
   const keys = Object.keys(store).sort();
   while (keys.length > 21){ delete store[keys.shift()]; }   /* guardamos hasta 3 semanas, para no crecer sin límite */
-  lsSet(BASES_KEY, store);
+  setBases(store);
 }
 function resetChipUI(id){
   const c = $(id); if (!c) return;
@@ -927,7 +932,7 @@ function resetChipUI(id){
 function heredarInHouse(){
   if (guests.length) return false;
   const base = $('refDate').value;
-  const store = lsGet(BASES_KEY, {});
+  const store = getBases();
   const previos = Object.keys(store).filter(k => k < base && (store[k].guests || []).length).sort();
   if (!previos.length) return false;
   const origen = previos[previos.length - 1];
@@ -943,7 +948,7 @@ function heredarInHouse(){
 $('refDate').addEventListener('change', () => {
   const newBaseISO = $('refDate').value;
   if (currentBaseISO && (tasks.length || guests.length)) saveBaseSnapshot(currentBaseISO);
-  const store = lsGet(BASES_KEY, {});
+  const store = getBases();
   const snap = store[newBaseISO];
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
@@ -2271,7 +2276,7 @@ function loadState(){
     return;
   }
   /* los listados propios de esta fecha, si ya existen guardados por día */
-  const bases = lsGet(BASES_KEY, {});
+  const bases = getBases();
   const snap = savedBaseISO ? bases[savedBaseISO] : null;
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
