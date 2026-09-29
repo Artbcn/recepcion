@@ -1297,7 +1297,8 @@ async function renderCierre(){
   const mmap = {}; for (const c of mcierre) mmap[c.kind + '|' + c.hab] = c;
   if (mparte){
     const mTasks = (kind, x) => {
-      if (kind === 'mp_general') return (x.tareas||[]).length ? x.tareas : ['Mantenimiento general'];
+      if (kind === 'mp_general') return (x.tareas||[]).concat(x.nota ? [x.nota] : []).length ? (x.tareas||[]).concat(x.nota ? [x.nota] : []) : ['Mantenimiento general'];
+      if (kind === 'mp_libre') return (x.tareas||[]).concat(x.nota ? [x.nota] : []).length ? (x.tareas||[]).concat(x.nota ? [x.nota] : []) : ['Mantenimiento general'];
       if (kind === 'mp_puntual') return (x.tareas||[]).concat(x.nota ? [x.nota] : []).length ? (x.tareas||[]).concat(x.nota ? [x.nota] : []) : ['Revisar'];
       if (kind === 'mp_cliente') return [ x.nota || 'Incidencia' ];
       if (kind === 'mp_shared')  return x.tareas || [];
@@ -1307,6 +1308,7 @@ async function renderCierre(){
     const mgroups = [
       { kind:'mp_puntual', title:'Mantenimiento \u00b7 Puntual',  items:(mparte.puntual||[]).map(x => ({ base:x.hab, apto:x.hab, ctx:(x.huesped||''), x })) },
       { kind:'mp_general', title:'Mantenimiento \u00b7 General',  items:(mparte.general||[]).map(x => ({ base:x.hab, apto:x.hab, ctx:'', x })) },
+      { kind:'mp_libre',   title:'Mantenimiento \u00b7 Libres',   items:(mparte.libre||[]).map(x => ({ base:x.hab, apto:x.hab, ctx:'', x })) },
       { kind:'mp_extra',   title:'Mantenimiento \u00b7 Incidencias', items:(mparte.extras||[]).map(x => ({ base:x.id, apto:x.hab, ctx:(x.tipo||''), x })) },
       { kind:'mp_shared',  title:'Mantenimiento \u00b7 General del d\u00eda', items:((mparte.compartidas||[]).length ? [{ base:'_general', apto:'General', ctx:'', x:{tareas:mparte.compartidas} }] : []) },
       { kind:'mp_manual',  title:'Mantenimiento \u00b7 Tareas pegadas', items:(mparte.manual||[]).map(x => ({ base:x.hab, apto:x.hab, ctx:(x.ctx||''), x })) },
