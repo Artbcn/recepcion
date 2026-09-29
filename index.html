@@ -2293,17 +2293,23 @@ function loadState(){
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
     if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
-  } else {
+  } else if (st.baseISO && st.baseISO === savedBaseISO){
+    /* el bloque general (art-state) es del MISMO día que estamos por mostrar: sirve de respaldo
+       (por ejemplo, la primera vez que arranca esto, antes de que existiera el guardado por día). */
     tasks = st.tasks || [];
     guests = st.guests || [];
     if (st.notesTareas) $('notesTareas').value = st.notesTareas;
+  } else {
+    /* es un día distinto al del bloque general: no le pedimos prestados sus listados, quedan
+       vacíos hasta que vuelvas a cargar los de este día en particular. */
+    tasks = []; guests = [];
   }
   if (st.notesCal) $('notesCal').value = st.notesCal;
   if (savedBaseISO) $('refDate').value = savedBaseISO;
   currentBaseISO = $('refDate').value;
   syncTareasDate();
   archivedISO = st.archivedISO || null;
-  const chipsFuente = snap ? snap.chips : st.chips;
+  const chipsFuente = snap ? snap.chips : (st.baseISO === savedBaseISO ? st.chips : null);
   ['chip-arr','chip-dep','chip-inh'].forEach((id,i) => {
     const txt = chipsFuente && [chipsFuente.arr, chipsFuente.dep, chipsFuente.inh][i];
     if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt); else resetChipUI(id);
