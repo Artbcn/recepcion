@@ -706,43 +706,8 @@ try{ if (SB_URL && SB_KEY && window.supabase){ sb = window.supabase.createClient
 const _lsSet    = localStorage.setItem.bind(localStorage);
 const _lsRemove = localStorage.removeItem.bind(localStorage);
 
-/* 'art-state' es el bloque grande (tasks + guests): si las dos computadoras están abiertas a la vez,
-   la que guarda último pisaría por completo a la otra sin avisar. Para evitarlo, guardamos qué tan
-   "al día" estamos (el savedAt que ya conocemos) y, antes de subir, chequeamos que nadie haya guardado
-   algo más nuevo mientras tanto. Si alguien lo hizo, NO subimos (para no perder su trabajo) y avisamos fuerte. */
-let knownStateSavedAt = 0;
-async function sbPushState(k, valStr){
-  let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
-  const miSavedAt = (v && v.savedAt) || 0;
-  try{
-    const { data } = await sb.from('limp_kv').select('v').eq('k', k).maybeSingle();
-    const remotoSavedAt = (data && data.v && data.v.savedAt) || 0;
-    if (remotoSavedAt > knownStateSavedAt){
-      showConflictWarning();
-      return;   /* alguien guardó algo más nuevo que lo último que vimos: no lo pisamos */
-    }
-  }catch(e){ /* si no pudimos chequear, mejor no arriesgarnos a pisar */ showConflictWarning(); return; }
-  try{
-    const { error } = await sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: new Date().toISOString() });
-    if (error) throw error;
-    knownStateSavedAt = miSavedAt;
-  }catch(e){ showConflictWarning(); }
-}
-function showConflictWarning(){
-  let b = document.getElementById('sbConflictBanner');
-  if (!b){
-    b = document.createElement('div');
-    b.id = 'sbConflictBanner';
-    b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:10000;background:#C0392B;color:#fff;padding:14px 16px;text-align:center;font-weight:700;cursor:pointer;box-shadow:0 -2px 10px rgba(0,0,0,.3)';
-    b.textContent = '⚠️ Tu compañera guardó algo más nuevo mientras editabas — tus últimos cambios NO se subieron. Tocá acá para recargar y ver lo de ella antes de seguir.';
-    b.addEventListener('click', () => location.reload());
-    document.body.appendChild(b);
-  }
-  b.style.display = 'block';
-}
 function sbPush(k, valStr){
   if (!sb) return;
-  if (k === 'art-state'){ sbPushState(k, valStr); return; }
   if (k === 'art-bases'){ sbPushBases(k, valStr); return; }
   let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
   sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: new Date().toISOString() }).then(()=>{}, ()=>{});
@@ -795,7 +760,6 @@ async function sbHydrate(){
       if (error || !data) throw error || new Error('sin datos');
       for (const row of data){
         try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){}
-        if (row.k === SKEY && row.v && row.v.savedAt) knownStateSavedAt = row.v.savedAt;
       }
       return true;
     }catch(e){
@@ -1002,6 +966,7 @@ $('refDate').addEventListener('change', () => {
      (si no, la "red de seguridad" de buildTasks usaría filas viejas). Solo el In House se hereda. */
   arrivalRows = null; departureRows = null;
   currentBaseISO = newBaseISO;
+  try{ sessionStorage.setItem('art-lastbase-tab', newBaseISO); }catch(e){}
   const prev = syncTareasDate();
   /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
   if (prev !== tareasISO && archivedISO === prev){
@@ -2282,7 +2247,13 @@ function loadState(){
   let st = null;
   try{ const raw = localStorage.getItem(SKEY); if (raw) st = deserialize(raw); }catch(e){}
   if (!st) return;
-  const savedBaseISO = st.baseISO || (st.tareasISO ? toISO(addDays(fromISO(st.tareasISO), -1)) : null);
+  let savedBaseISO = st.baseISO || (st.tareasISO ? toISO(addDays(fromISO(st.tareasISO), -1)) : null);
+  /* si esta PESTAÑA ya estaba parada en un día (por ejemplo, justo antes de un refresh), lo
+     respetamos en vez de saltar a lo que diga el último guardado compartido — así un recargo
+     por lo que sea no te saca de donde estabas trabajando. */
+  let sessionBaseISO = null;
+  try{ sessionBaseISO = sessionStorage.getItem('art-lastbase-tab'); }catch(e){}
+  if (sessionBaseISO) savedBaseISO = sessionBaseISO;
   /* el parte real es para "Día base" + 1. Si ESE día (no el Día base en sí) ya pasó, son listados
      de un parte que ya se usó y quedó atrás — recién ahí los descartamos. Si el parte guardado es
      para HOY o más adelante (lo normal: alguien lo preparó el día anterior), lo mantenemos igual. */
@@ -2297,23 +2268,31 @@ function loadState(){
     box.style.display = 'block';
     return;
   }
-  tasks = st.tasks || [];
-  guests = st.guests || [];
-  if (st.notesTareas) $('notesTareas').value = st.notesTareas;
+  /* los listados propios de esta fecha, si ya existen guardados por día */
+  const bases = lsGet(BASES_KEY, {});
+  const snap = savedBaseISO ? bases[savedBaseISO] : null;
+  if (snap){
+    tasks = snap.tasks || []; guests = snap.guests || [];
+    if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
+  } else {
+    tasks = st.tasks || [];
+    guests = st.guests || [];
+    if (st.notesTareas) $('notesTareas').value = st.notesTareas;
+  }
   if (st.notesCal) $('notesCal').value = st.notesCal;
   if (savedBaseISO) $('refDate').value = savedBaseISO;
   currentBaseISO = $('refDate').value;
   syncTareasDate();
   archivedISO = st.archivedISO || null;
-  if (st.chips){
-    for (const [id, txt] of [['chip-arr', st.chips.arr], ['chip-dep', st.chips.dep], ['chip-inh', st.chips.inh]]){
-      if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt);
-    }
-  }
+  const chipsFuente = snap ? snap.chips : st.chips;
+  ['chip-arr','chip-dep','chip-inh'].forEach((id,i) => {
+    const txt = chipsFuente && [chipsFuente.arr, chipsFuente.dep, chipsFuente.inh][i];
+    if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt); else resetChipUI(id);
+  });
   if (tasks.length) renderTareas();
   if (guests.length){ renderCal(); renderHoy(); }
   if (tasks.length || guests.length){
-    const d = new Date(st.savedAt || Date.now());
+    const d = new Date((snap && snap.savedAt) || st.savedAt || Date.now());
     const box = $('restored');
     box.textContent = `Datos restaurados de la última sesión — guardados el ${fmtShort(d)} a las ${pad(d.getHours())}:${pad(d.getMinutes())}.`;
     box.style.display = 'block';
