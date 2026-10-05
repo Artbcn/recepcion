@@ -540,7 +540,8 @@ tr.has-fondo td{background:#FEFBF5}
  <button id="sortAlf">Alfabético</button>
  </div>
  <button class="btn btn-copy" id="btnImgTareasCopy">📋 Copiar imagen</button>
- <button class="btn btn-img" id="btnImgTareas">📤 Enviar</button>
+ <button class="btn btn-img" id="btnImgTareas">📤 Enviar a Drive</button>
+ <button class="btn btn-ghost" id="btnDriveCfg" title="Configurar la conexión con Google Drive">⚙ Drive</button>
  <button class="btn btn-ghost" id="btnImgTareasDl">⤓ Descargar</button>
  <button class="btn btn-primary" id="btnXlsTareas">Descargar Excel</button>
  </div>
@@ -3907,23 +3908,101 @@ function flashBtn(btn, txt, ok){
   btn.classList.toggle('copied', !!ok);
   setTimeout(() => { btn.textContent = orig; btn.classList.remove('copied'); }, 2200);
 }
-function copyParteImage(btn){
+/* La imagen se pre-arma apenas pasás el mouse (o tocás) por el botón, así al hacer clic ya hay un
+   Blob listo y se copia en el acto. Con una promesa adentro del ClipboardItem algunos Chrome/Chromebook
+   "copian" pero después WhatsApp no recibe la imagen. */
+let _parteBlobCache = null;   /* { blob, name, at } */
+function prepararParteBlob(){
+  if (_parteBlobCache && Date.now() - _parteBlobCache.at < 4000) return _parteBlobCache.promise;
+  const promise = (async () => {
+    try{ await document.fonts.ready; }catch(e){}
+    const out = drawParte();
+    const blob = await canvasBlob(out.cv);
+    return { blob, name: out.name };
+  })();
+  _parteBlobCache = { promise, at: Date.now() };
+  promise.catch(() => { _parteBlobCache = null; });
+  return promise;
+}
+function mostrarParteModal(blob){
+  const url = URL.createObjectURL(blob);
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,.7);display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:16px;overflow:auto';
+  ov.innerHTML = `<div style="background:#fff;border-radius:12px;padding:10px 14px;margin-bottom:10px;max-width:560px;font-size:14px">Hacé <b>clic derecho sobre la imagen → Copiar imagen</b> (o mantené apretada en el móvil) y pegala en WhatsApp. <button id="parteModalX" style="margin-left:8px;border:none;background:#17313B;color:#fff;border-radius:8px;padding:6px 12px;cursor:pointer">Cerrar</button></div><img src="${url}" style="max-width:100%;background:#fff;border-radius:8px">`;
+  document.body.appendChild(ov);
+  const cerrar = () => { ov.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); };
+  ov.querySelector('#parteModalX').onclick = cerrar;
+  ov.addEventListener('click', e => { if (e.target === ov) cerrar(); });
+}
+async function copyParteImage(btn){
   hideError();
+  let datos;
+  try{ datos = await prepararParteBlob(); }
+  catch(e){ showError('No pude armar la imagen del parte (' + e.message + ').'); return; }
+  const { blob } = datos;
   if (!(navigator.clipboard && navigator.clipboard.write && window.ClipboardItem)){
-    showError('Este navegador no deja copiar imágenes al portapapeles. Usá "Enviar" o "Descargar imagen" — o abrí la app en Chrome o Edge desde la computadora.');
+    mostrarParteModal(blob);
     return;
   }
-  /* el ClipboardItem se arma acá mismo, dentro del clic, y por dentro lleva una promesa:
-     si esperamos al dibujo antes de crearlo, Safari lo rechaza por perder el gesto del usuario */
-  const blobP = (async () => {
-    try{ await document.fonts.ready; }catch(e){}
-    return await canvasBlob(drawParte().cv);
-  })();
-  navigator.clipboard.write([ new ClipboardItem({ 'image/png': blobP }) ])
-    .then(() => flashBtn(btn, '✓ Copiada — pegala en WhatsApp', true))
-    .catch(err => {
-      showError('No pude copiar la imagen al portapapeles (' + (err && err.message ? err.message : err) + '). Probá con "Descargar imagen" o "Enviar".');
-    });
+  try{
+    await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+    flashBtn(btn, '✓ Copiada — pegala en WhatsApp', true);
+  }catch(err){
+    /* el navegador no dejó copiar (pasa si el clic "venció" mientras se armaba la imagen): mostramos la imagen para copiarla a mano */
+    mostrarParteModal(blob);
+  }
+}
+['btnParteCopy','btnImgTareasCopy'].forEach(id => {
+  const b = document.getElementById(id); if (!b) return;
+  ['mouseenter','touchstart','focus'].forEach(ev => b.addEventListener(ev, () => { try{ prepararParteBlob(); }catch(e){} }, { passive:true }));
+});
+
+/* ================= Enviar a Google Drive =================
+   La app no puede escribir en Drive sola: se conecta a un pequeño "Apps Script" que Andrés publica una vez
+   en su cuenta de Google. Ese script guarda la imagen en la carpeta "Partes limpieza ART" (un archivo por día). */
+const DRIVE_URL_KEY = 'art-drive-url';
+function configurarDriveUrl(){
+  const actual = lsGet(DRIVE_URL_KEY, '') || '';
+  const v = prompt('Pegá la URL de la aplicación web de Apps Script (termina en /exec):', actual);
+  if (v === null) return null;
+  const url = v.trim();
+  lsSet(DRIVE_URL_KEY, url);
+  return url;
+}
+function blobToBase64(blob){
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(',')[1]);
+    r.onerror = () => rej(r.error || new Error('no pude leer la imagen'));
+    r.readAsDataURL(blob);
+  });
+}
+async function enviarParteDrive(btn){
+  hideError();
+  let url = lsGet(DRIVE_URL_KEY, '');
+  if (!url){
+    url = configurarDriveUrl();
+    if (!url) return;
+  }
+  const orig = btn.dataset.orig || btn.textContent; btn.dataset.orig = orig;
+  btn.textContent = 'Subiendo…'; btn.disabled = true;
+  try{
+    const { blob, name } = await prepararParteBlob();
+    const data = await blobToBase64(blob);
+    const resp = await fetch(url, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' }, body: JSON.stringify({ name, mime:'image/png', data }) });
+    let j = null; try{ j = await resp.json(); }catch(e){}
+    if (j && j.ok){
+      let copiado = false;
+      try{ await navigator.clipboard.writeText(j.url); copiado = true; }catch(e){}
+      flashBtn(btn, copiado ? '✓ Subido a Drive — link copiado' : '✓ Subido a Drive', true);
+      btn.disabled = false;
+      return;
+    }
+    throw new Error((j && j.error) ? j.error : 'el script no respondió bien (revisá que esté publicado para "Cualquier usuario")');
+  }catch(err){
+    btn.textContent = orig; btn.disabled = false;
+    showError('No pude subir el parte a Drive: ' + (err && err.message ? err.message : err) + '. Si cambió la URL del script, tocá ⚙ Drive para actualizarla.');
+  }
 }
 async function exportParte(share){
   hideError();
@@ -3994,7 +4073,8 @@ $('btnXlsCal').addEventListener('click', exportCalXlsx);
 $('btnParteCopy').addEventListener('click', e => copyParteImage(e.currentTarget));
 $('btnImgTareasCopy').addEventListener('click', e => copyParteImage(e.currentTarget));
 $('btnParte').addEventListener('click', () => exportParte(true));
-$('btnImgTareas').addEventListener('click', () => exportParte(true));
+$('btnImgTareas').addEventListener('click', e => enviarParteDrive(e.currentTarget));
+$('btnDriveCfg').addEventListener('click', configurarDriveUrl);
 $('btnParteDl').addEventListener('click', () => exportParte(false));
 $('btnImgTareasDl').addEventListener('click', () => exportParte(false));
 $('sortPrio').addEventListener('click', () => { sortMode='prio'; setSortBtn('sortPrio'); renderTareas(); });
