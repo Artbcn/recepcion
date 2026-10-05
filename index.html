@@ -3880,7 +3880,8 @@ function drawParte(){
   const now = new Date();
   x.fillText(`Generado ${fmtShort(now)} ${pad(now.getHours())}:${pad(now.getMinutes())} · ART Limpieza`, PADX, H - 24);
 
-  return { cv, name: `Parte_limpieza_${pad(td.getDate())}_${pad(td.getMonth()+1)}_${td.getFullYear()}.png` };
+  const bd = refDate();   /* nombre con el Día base (el día en que se prepara), p.ej. "Tareas pisos 05102026.png" */
+  return { cv, name: `Tareas pisos ${pad(bd.getDate())}${pad(bd.getMonth()+1)}${bd.getFullYear()}.png` };
 }
 
 /* La descarga por enlace falla dentro de la app instalada (y en varios móviles).
