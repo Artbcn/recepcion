@@ -1166,6 +1166,16 @@ function parteSnapshot(){
     const ev = (guests.length || extraCleans().length || manualTowels().length) ? eventsToday() : { towels: [], clients: [] };
     towels = ev.towels; clients = ev.clients;
   }catch(e){}
+  let prevision = [];
+  try{
+    if (guests.length){
+      const ref0 = tareasDate();
+      for (let k = 0; k <= 7; k++){
+        const day = addDays(ref0, k), f = forecastCounts(day, ref0);
+        prevision.push({ fecha: toISO(day), t: f.t, c: f.c, s: f.d, xt: f.xT, xc: f.xC });
+      }
+    }
+  }catch(e){}
   let fondos = [];
   try{
     if (list.length){
@@ -1183,6 +1193,7 @@ function parteSnapshot(){
   return {
     fecha: tareasISO,
     generatedAt: Date.now(),
+    prevision,
     fondos,
     notas: $('notesTareas').value,
     pisos: list.map(t => ({
