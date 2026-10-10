@@ -2775,25 +2775,26 @@ const clientDates = s => [s.l1, s.l2, s.l3, s.l4].filter(Boolean);
    están cargados los informes Arrival/Departure, se usan sus cifras oficiales. */
 function forecastCounts(day, ref){
   let t = 0, c = 0, a = 0, d = 0;
+  const dISO = toISO(day);
+  /* mismas reglas que la lista del día (eventsToday): lo que se borró (oculto) no cuenta, ni siquiera si el apto está repetido */
+  const hideC = new Set((lsGet('art-hidecl-' + dISO, []) || []).map(String));
+  const hideT = new Set((lsGet('art-hidetw-' + dISO, []) || []).map(String));
   for (const g of guests){
     const s = schedule(g);
-    t += towelDates(s).filter(x => same(x, day)).length;
-    c += clientDates(s).filter(x => same(x, day)).length;
+    if (towelDates(s).some(x => same(x, day)) && !hideT.has(String(g.hab))) t++;
+    if (clientDates(s).some(x => same(x, day)) && !hideC.has(String(g.hab))) c++;
     if (same(g.checkin, day))  a++;
     if (same(g.checkout, day)) d++;
   }
-  const dISO = toISO(day);
   const nExtraC  = (lsGet('art-extra-'  + dISO, []) || []).length;
   const nManualT = (lsGet('art-mantw-'  + dISO, []) || []).length;
-  const nHideC   = (lsGet('art-hidecl-' + dISO, []) || []).length;
-  const nHideT   = (lsGet('art-hidetw-' + dISO, []) || []).length;
-  t = Math.max(0, t + nManualT - nHideT);
-  c = Math.max(0, c + nExtraC  - nHideC);
+  t += nManualT;
+  c += nExtraC;
   if (ref && same(day, ref)){
     if (arrivalRows)   a = arrivalRows.length;
     if (departureRows) d = departureRows.length;
   }
-  return { t, c, a, d, xT: nManualT > 0, xC: nExtraC > 0 };
+  return { t, c, a, d, xT: nManualT > 0, xC: nExtraC > 0, nExtra: nExtraC + nManualT };
 }
 
 function renderCal(){
