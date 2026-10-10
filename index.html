@@ -1203,7 +1203,7 @@ function parteSnapshot(){
       llegada: fmt(t.llegada), salida: fmt(t.salida)
     })),
     toallas: towels.map(g => ({ hab: g.hab, huesped: g.huesped, hora: towelHora(g.hab), manual: !!g._manual, avisado: isConfirmed(g.hab, 't') })),
-    clientes: clients.map(c => ({ hab: c.g.hab, huesped: c.g.huesped, hora: c.hora, extra: !!c.extra, avisado: isConfirmed(c.extra ? 'x' + c.g.hab : c.g.hab, 'c') })),
+    clientes: clients.filter(c => confState(c.extra ? 'x' + c.g.hab : c.g.hab, 'c') !== 'no').map(c => ({ hab: c.g.hab, huesped: c.g.huesped, hora: c.hora, extra: !!c.extra, avisado: isConfirmed(c.extra ? 'x' + c.g.hab : c.g.hab, 'c') })),
     pextras: pextras()
   };
 }
@@ -2793,11 +2793,11 @@ function forecastCounts(day, ref){
   for (const g of guests){
     const s = schedule(g);
     if (towelDates(s).some(x => same(x, day)) && !hideT.has(String(g.hab))) t++;
-    if (clientDates(s).some(x => same(x, day)) && !hideC.has(String(g.hab))) c++;
+    if (clientDates(s).some(x => same(x, day)) && !hideC.has(String(g.hab)) && confState(g.hab, 'c', dISO) !== 'no') c++;
     if (same(g.checkin, day))  a++;
     if (same(g.checkout, day)) d++;
   }
-  const nExtraC  = (lsGet('art-extra-'  + dISO, []) || []).length;
+  const nExtraC  = (lsGet('art-extra-'  + dISO, []) || []).filter(e => confState('x' + e.hab, 'c', dISO) !== 'no').length;
   const nManualT = (lsGet('art-mantw-'  + dISO, []) || []).length;
   t += nManualT;
   c += nExtraC;
