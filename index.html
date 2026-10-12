@@ -492,10 +492,9 @@ tr.has-fondo td{background:#FEFBF5}
  <span class="fixed-date" title="Sale sola: la fecha base de arriba + 1 día.">
           🔒 Parte del <b id="tareasDateLbl2"></b> <span class="fd-note">(día base + 1)</span>
  </span>
- <button class="btn btn-copy" id="btnParteCopy">📋 Copiar imagen</button>
- <button class="btn btn-img" id="btnParte">📤 Enviar por WhatsApp</button>
+ <button class="btn btn-copy" id="btnParteCopy" title="Copia el parte como imagen: pegala en WhatsApp con Ctrl+V">📲 Enviar al WhatsApp</button>
  <button class="btn btn-ghost" id="btnParteDl">⤓ Descargar imagen</button>
- <span class="tip">Copiar es lo más rápido en la computadora: la pegás en WhatsApp con Ctrl+V. La imagen trae tareas + toallas + limpiezas + previsión.</span>
+ <span class="tip">Copia el parte como imagen: abrís WhatsApp y la pegás con Ctrl+V. Trae tareas + toallas + limpiezas + previsión.</span>
  </div>
  <div class="hoy-grid">
  <div class="hoy-card tw">
@@ -539,7 +538,7 @@ tr.has-fondo td{background:#FEFBF5}
  <button id="sortHab">Por apartamento</button>
  <button id="sortAlf">Alfabético</button>
  </div>
- <button class="btn btn-copy" id="btnImgTareasCopy">📋 Copiar imagen</button>
+ <button class="btn btn-copy" id="btnImgTareasCopy" title="Copia el parte como imagen: pegala en WhatsApp con Ctrl+V">📲 Enviar al WhatsApp</button>
  <button class="btn btn-img" id="btnImgTareas">📤 Enviar a Drive</button>
  <button class="btn btn-ghost" id="btnDriveCfg" title="Configurar la conexión con Google Drive">⚙ Drive</button>
  <button class="btn btn-ghost" id="btnImgTareasDl">⤓ Descargar</button>
@@ -4085,7 +4084,6 @@ $('btnXlsTareas').addEventListener('click', exportTareasXlsx);
 $('btnXlsCal').addEventListener('click', exportCalXlsx);
 $('btnParteCopy').addEventListener('click', e => copyParteImage(e.currentTarget));
 $('btnImgTareasCopy').addEventListener('click', e => copyParteImage(e.currentTarget));
-$('btnParte').addEventListener('click', () => exportParte(true));
 $('btnImgTareas').addEventListener('click', e => enviarParteDrive(e.currentTarget));
 $('btnDriveCfg').addEventListener('click', configurarDriveUrl);
 $('btnParteDl').addEventListener('click', () => exportParte(false));
