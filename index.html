@@ -2171,13 +2171,18 @@ function renderPeriodCalendarPanel(){
   }));
   const exportBtn = document.getElementById('btnExportControl');
   if (exportBtn) exportBtn.addEventListener('click', exportControlExcel);
-  box.querySelectorAll('.ctlDate').forEach(inp => inp.addEventListener('change', () => {
+  const ctlSave = (inp, raw) => {
     const est = periodEstado(); const id = inp.dataset.task, apt = inp.dataset.apt;
-    if (inp.value){ est[id] = est[id] || {}; est[id][apt] = inp.value; }
+    const v = ctlParse(raw);
+    if (v){ est[id] = est[id] || {}; est[id][apt] = v; }
     else if (est[id]){ delete est[id][apt]; }
     savePeriodEstado(est);
-    inp.style.color = inp.value ? '#128a4a' : '#c9c1af'; inp.style.fontWeight = inp.value ? '700' : '400';
-  }));
+    inp.value = ctlShow(v);
+    inp.style.color = !v ? '#c9c1af' : (ctlIsISO(v) ? '#128a4a' : '#2c5db0'); inp.style.fontWeight = v ? '700' : '400';
+    const pk = inp.parentNode.querySelector('.ctlPick'); if (pk) pk.value = ctlIsISO(v) ? v : '';
+  };
+  box.querySelectorAll('input.ctlDate').forEach(inp => inp.addEventListener('change', () => ctlSave(inp, inp.value)));
+  box.querySelectorAll('input.ctlPick').forEach(pk => pk.addEventListener('change', () => ctlSave(pk.parentNode.querySelector('.ctlDate'), pk.value)));
 }
 function toggleCalMonth(taskId, m){
   const defs = periodDefs(); const task = defs.find(t => t.id === taskId); if (!task) return;
@@ -2204,6 +2209,17 @@ function controlApartments(){
   guests.forEach(g => set.add(g.hab));
   return [...set].sort(cmpHab);
 }
+/* celda del control: acepta fecha (se guarda ISO) o texto libre (ej: "gris") */
+function ctlIsISO(v){ return /^\d{4}-\d{2}-\d{2}$/.test(String(v || '')); }
+function ctlShow(v){ const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v || ''); }
+function ctlParse(raw){
+  const s = String(raw || '').trim(); if (!s) return '';
+  if (ctlIsISO(s)) return s;
+  const m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
+  if (m){ let y = +m[3]; if (y < 100) y += 2000; const d = +m[1], mo = +m[2];
+    if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`; }
+  return s;
+}
 function renderControlTableHtml(){
   const aptTasks = periodDefs().filter(t => t.scope === 'apto');
   const apts = controlApartments();
@@ -2220,7 +2236,7 @@ function renderControlTableHtml(){
     html += `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--line);font-weight:700;font-family:'IBM Plex Mono',monospace;position:sticky;left:0;background:#fff">${esc(apt)}</td>`;
     for (const t of aptTasks){
       const d = periodEstado()[t.id] && periodEstado()[t.id][apt];
-      html += `<td style="text-align:center;padding:2px 4px;border-bottom:1px solid var(--line);white-space:nowrap"><input type="date" class="ctlDate" data-task="${esc(t.id)}" data-apt="${esc(apt)}" value="${esc(d || '')}" title="Tocá para editar la fecha" style="border:1px solid transparent;border-radius:6px;background:transparent;font:inherit;font-size:12px;padding:3px 2px;width:118px;${d?'color:#128a4a;font-weight:700':'color:#c9c1af'}"></td>`;
+      html += `<td style="text-align:center;padding:2px 4px;border-bottom:1px solid var(--line);white-space:nowrap"><input type="text" class="ctlDate" data-task="${esc(t.id)}" data-apt="${esc(apt)}" value="${esc(ctlShow(d))}" placeholder="dd/mm/aaaa o texto" title="Escrib\u00ed una fecha (dd/mm/aaaa) o un texto (ej: gris)" style="border:1px solid transparent;border-radius:6px;background:transparent;font:inherit;font-size:12px;padding:3px 2px;width:104px;text-align:center;${d?(ctlIsISO(d)?'color:#128a4a;':'color:#2c5db0;')+'font-weight:700':'color:#c9c1af'}"><input type="date" class="ctlPick" data-task="${esc(t.id)}" data-apt="${esc(apt)}" value="${ctlIsISO(d)?esc(d):''}" tabindex="-1" title="Elegir fecha del calendario" style="width:22px;border:0;background:transparent;padding:0;cursor:pointer;opacity:.7"></td>`;
     }
     html += '</tr>';
   }
@@ -3185,6 +3201,7 @@ function periodCurrentWindow(task, day){
 function periodIsDone(task, win, target){
   const est = periodEstado(); const d = est[task.id] && est[task.id][target];
   if (!d) return false;
+  if (!ctlIsISO(String(d).slice(0,10))) return false;   /* texto libre: no cuenta como fecha */
   if (task.period && task.period.type === 'rolling'){
     /* vence N meses después de la fecha REAL en que se marcó (no del 1° del mes siguiente) */
     const marked = fromISO(d);
