@@ -2171,6 +2171,8 @@ function renderPeriodCalendarPanel(){
   }));
   const exportBtn = document.getElementById('btnExportControl');
   if (exportBtn) exportBtn.addEventListener('click', exportControlExcel);
+  const bkB = document.getElementById('btnCopiaSeg'); if (bkB) bkB.addEventListener('click', () => descargarCopiaSeguridad(bkB));
+  const rsB = document.getElementById('btnRescatarCtl'); if (rsB) rsB.addEventListener('click', () => rescatarControl(rsB));
   const ctlSave = (inp, raw) => {
     const est = periodEstado(); const id = inp.dataset.task, apt = inp.dataset.apt;
     const v = ctlParse(raw);
@@ -2225,7 +2227,7 @@ function renderControlTableHtml(){
   const apts = controlApartments();
   let html = '<h3 style="margin:28px 0 10px;border-top:1px solid var(--line);padding-top:18px;font-size:15px">Control por apartamento \u2014 \u00faltima vez que se hizo</h3>';
   html += '<div class="hint" style="text-align:left;margin-bottom:12px">Para llevar registro y, si hace falta, mostrarle a tu jefa cu\u00e1ndo se hizo cada tarea en cada apartamento. <b>Tocá una fecha para corregirla</b> (o vaciala para borrarla); el Excel sale con lo que ves.</div>';
-  html += '<button class="btn" id="btnExportControl" style="margin-bottom:12px">\u2b07 Exportar a Excel</button>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn" id="btnExportControl">\u2b07 Exportar a Excel</button><button class="btn" id="btnCopiaSeg">\ud83d\udcbe Copia de seguridad completa</button><button class="btn" id="btnRescatarCtl">\ud83d\udedf Rescatar datos faltantes</button></div>';
   if (!apts.length || !aptTasks.length){
     return html + '<div class="none" style="display:block">Todav\u00eda no hay datos registrados.</div>';
   }
@@ -3145,7 +3147,114 @@ function periodArchivoHtml(cats){
   return `<details style="margin-top:18px;background:#fff;border:1px solid #e7e2d6;border-radius:12px;padding:10px 14px"><summary style="cursor:pointer;font-weight:700">Tareas borradas — historial guardado (${arch.length})</summary>${rows}</details>`;
 }
 
-function savePeriodEstado(o){ lsSet('art-period-estado', o); }
+/* ===== registro de control: guardado SEGURO (nunca pisa lo que cargó otro dispositivo) ===== */
+function estadoUnir(base, extra){   /* une celdas: lo de "base" manda, "extra" solo rellena huecos */
+  const out = JSON.parse(JSON.stringify(base || {}));
+  for (const id of Object.keys(extra || {})){
+    out[id] = out[id] || {};
+    for (const apt of Object.keys(extra[id] || {})){
+      if (out[id][apt] === undefined || out[id][apt] === '') out[id][apt] = extra[id][apt];
+    }
+  }
+  return out;
+}
+function estadoDiff(prev, next){   /* celdas cambiadas / borradas entre dos versiones */
+  const set = [], del = [];
+  for (const id of Object.keys(next)) for (const apt of Object.keys(next[id] || {})){
+    if (!prev[id] || prev[id][apt] !== next[id][apt]) set.push([id, apt, next[id][apt]]);
+  }
+  for (const id of Object.keys(prev)) for (const apt of Object.keys(prev[id] || {})){
+    if (!next[id] || next[id][apt] === undefined) del.push([id, apt]);
+  }
+  return { set, del };
+}
+function savePeriodEstado(o){
+  const prev = lsGet('art-period-estado', {});
+  lsSet('art-period-estado', o);
+  const diff = estadoDiff(prev, o);
+  if (!diff.set.length && !diff.del.length) return;
+  if (!sb) return;
+  (async () => {   /* re-lee lo que hay en la nube y aplica SOLO las celdas tocadas */
+    try{
+      const { data, error } = await sb.from('limp_kv').select('v').eq('k', 'art-period-estado').maybeSingle();
+      if (error || !data || !data.v) return;
+      const remoto = typeof data.v === 'string' ? JSON.parse(data.v) : data.v;
+      const fusion = JSON.parse(JSON.stringify(remoto));
+      for (const [id, apt, val] of diff.set){ fusion[id] = fusion[id] || {}; fusion[id][apt] = val; }
+      for (const [id, apt] of diff.del){ if (fusion[id]) delete fusion[id][apt]; }
+      if (JSON.stringify(fusion) !== JSON.stringify(lsGet('art-period-estado', {}))){
+        lsSet('art-period-estado', fusion);
+        try{ if (typeof renderPeriodPanelsSoft === 'function') renderPeriodPanelsSoft(); }catch(e){}
+      }
+    }catch(e){}
+  })();
+}
+/* copia diaria automática en este navegador (no se sincroniza; sirve de red de seguridad) */
+function respaldoLocalDiario(){
+  try{
+    const hoy = toISO(new Date()), key = 'bk-control-' + hoy;
+    if (!localStorage.getItem(key)){
+      const snap = {};
+      ['art-period-estado','art-period-defs','art-period-archivo'].forEach(k => { const v = localStorage.getItem(k); if (v != null) snap[k] = v; });
+      if (snap['art-period-estado']) localStorage.setItem(key, JSON.stringify(snap));
+    }
+    const ks = []; for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith('bk-control-')) ks.push(k); }
+    ks.sort().slice(0, Math.max(0, ks.length - 30)).forEach(k => localStorage.removeItem(k));
+  }catch(e){}
+}
+async function leerNube(keys){
+  const out = {}; if (!sb) return out;
+  const { data, error } = await sb.from('limp_kv').select('k,v').in('k', keys);
+  if (error) throw error;
+  (data || []).forEach(r => { out[r.k] = typeof r.v === 'string' ? JSON.parse(r.v) : r.v; });
+  return out;
+}
+/* rescata y UNE: nube + este navegador + copias diarias + planilla vieja */
+async function rescatarControl(btn){
+  const t0 = btn.textContent; btn.disabled = true; btn.textContent = 'Rescatando\u2026';
+  try{
+    const nube = await leerNube(['art-period-estado','art-fondo-fechas']);
+    let u = nube['art-period-estado'] || {};
+    const antes = JSON.stringify(u).length;
+    const fuentes = [];
+    fuentes.push(lsGet('art-period-estado', {}));
+    for (let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if (k && k.startsWith('bk-control-')){ try{ const sn = JSON.parse(localStorage.getItem(k)); if (sn['art-period-estado']) fuentes.push(JSON.parse(sn['art-period-estado'])); }catch(e){} }
+    }
+    if (nube['art-fondo-fechas']) fuentes.push(nube['art-fondo-fechas']);
+    let nuevas = 0;
+    for (const src of fuentes){
+      const antesN = Object.values(u).reduce((a, o) => a + Object.keys(o || {}).length, 0);
+      u = estadoUnir(u, src);
+      nuevas += Object.values(u).reduce((a, o) => a + Object.keys(o || {}).length, 0) - antesN;
+    }
+    if (nuevas > 0){ lsSet('art-period-estado', u); }
+    alert(nuevas > 0 ? `Listo: recuperé ${nuevas} fechas que faltaban y las uní al registro.` : 'No encontré fechas que falten: lo que hay en la nube, en este navegador y en las copias diarias ya está todo unido.');
+    if (nuevas > 0) location.reload();
+  }catch(e){ alert('No pude rescatar: ' + e.message); }
+  btn.disabled = false; btn.textContent = t0;
+}
+/* copia de seguridad COMPLETA a demanda (nube + este navegador): registro, tareas, archivo e historial */
+async function descargarCopiaSeguridad(btn){
+  const t0 = btn.textContent; btn.disabled = true; btn.textContent = 'Preparando\u2026';
+  try{
+    const out = { generado: new Date().toISOString(), nube: {}, navegador: {} };
+    if (sb){
+      const { data, error } = await sb.from('limp_kv').select('k,v,updated_at').or('k.like.art-period-%,k.like.art-hist-%,k.eq.art-fondo-fechas');
+      if (error) throw error;
+      (data || []).forEach(r => { out.nube[r.k] = r.v; });
+    }
+    for (let i = 0; i < localStorage.length; i++){
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('art-period-') || k.startsWith('art-hist-') || k.startsWith('bk-control-'))) out.navegador[k] = localStorage.getItem(k);
+    }
+    const blob = new Blob([JSON.stringify(out)], { type: 'application/json' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'Copia_seguridad_ART_' + toISO(new Date()) + '.json'; document.body.appendChild(a); a.click(); a.remove();
+  }catch(e){ alert('No pude generar la copia: ' + e.message); }
+  btn.disabled = false; btn.textContent = t0;
+}
 /* ventana "actual" (vigente hoy) de una tarea periódica; null si es manual (sin período) */
 function periodCurrentWindow(task, day){
   const y = day.getFullYear(); const p = task.period || {};
@@ -4196,6 +4305,7 @@ $('notesCal').addEventListener('input', saveState);
 
 /* arranque: recuperar lo de la sesión anterior */
 (async function boot(){
+  respaldoLocalDiario();   /* ANTES de bajar lo de la nube: guarda la copia local del día */
   const sincronizado = await sbHydrate();   /* bajamos lo compartido (true si Supabase no está configurado, o si bajó bien) */
   bootDone = true;
   loadState();
