@@ -2169,6 +2169,13 @@ function renderPeriodCalendarPanel(){
   }));
   const exportBtn = document.getElementById('btnExportControl');
   if (exportBtn) exportBtn.addEventListener('click', exportControlExcel);
+  box.querySelectorAll('.ctlDate').forEach(inp => inp.addEventListener('change', () => {
+    const est = periodEstado(); const id = inp.dataset.task, apt = inp.dataset.apt;
+    if (inp.value){ est[id] = est[id] || {}; est[id][apt] = inp.value; }
+    else if (est[id]){ delete est[id][apt]; }
+    savePeriodEstado(est);
+    inp.style.color = inp.value ? '#128a4a' : '#c9c1af'; inp.style.fontWeight = inp.value ? '700' : '400';
+  }));
 }
 function toggleCalMonth(taskId, m){
   const defs = periodDefs(); const task = defs.find(t => t.id === taskId); if (!task) return;
@@ -2199,7 +2206,7 @@ function renderControlTableHtml(){
   const aptTasks = periodDefs().filter(t => t.scope === 'apto');
   const apts = controlApartments();
   let html = '<h3 style="margin:28px 0 10px;border-top:1px solid var(--line);padding-top:18px;font-size:15px">Control por apartamento \u2014 \u00faltima vez que se hizo</h3>';
-  html += '<div class="hint" style="text-align:left;margin-bottom:12px">Para llevar registro y, si hace falta, mostrarle a tu jefa cu\u00e1ndo se hizo cada tarea en cada apartamento.</div>';
+  html += '<div class="hint" style="text-align:left;margin-bottom:12px">Para llevar registro y, si hace falta, mostrarle a tu jefa cu\u00e1ndo se hizo cada tarea en cada apartamento. <b>Tocá una fecha para corregirla</b> (o vaciala para borrarla); el Excel sale con lo que ves.</div>';
   html += '<button class="btn" id="btnExportControl" style="margin-bottom:12px">\u2b07 Exportar a Excel</button>';
   if (!apts.length || !aptTasks.length){
     return html + '<div class="none" style="display:block">Todav\u00eda no hay datos registrados.</div>';
@@ -2211,7 +2218,7 @@ function renderControlTableHtml(){
     html += `<tr><td style="padding:6px 8px;border-bottom:1px solid var(--line);font-weight:700;font-family:'IBM Plex Mono',monospace;position:sticky;left:0;background:#fff">${esc(apt)}</td>`;
     for (const t of aptTasks){
       const d = periodEstado()[t.id] && periodEstado()[t.id][apt];
-      html += `<td style="text-align:center;padding:6px 6px;border-bottom:1px solid var(--line);white-space:nowrap;${d?'color:#128a4a;font-weight:700':'color:#c9c1af'}">${d ? esc(d.split('-').reverse().join('/')) : '\u2014'}</td>`;
+      html += `<td style="text-align:center;padding:2px 4px;border-bottom:1px solid var(--line);white-space:nowrap"><input type="date" class="ctlDate" data-task="${esc(t.id)}" data-apt="${esc(apt)}" value="${esc(d || '')}" title="Tocá para editar la fecha" style="border:1px solid transparent;border-radius:6px;background:transparent;font:inherit;font-size:12px;padding:3px 2px;width:118px;${d?'color:#128a4a;font-weight:700':'color:#c9c1af'}"></td>`;
     }
     html += '</tr>';
   }
