@@ -1884,6 +1884,7 @@ function renderPeriodPanel(cats, containerId){
     </div>`;
   }
   if (!defs.length) html += '<div class="none" style="display:block">Sin tareas todavía.</div>';
+  html += periodArchivoHtml(cats);
   box.innerHTML = html;
   for (const task of defs) renderPeriodTracker(task);
   wirePeriodPanel(containerId);
@@ -2020,8 +2021,15 @@ function periodAddTask(btn){
 function wirePeriodPanel(containerId){
   const cats = containerId === 'mantPBody' ? ['mantenimiento','comunes'] : ['limpieza'];
   const box = document.getElementById(containerId); if (!box) return;
+  box.querySelectorAll('.p-restore-arch').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.id, t = periodArchivo().find(x => x.id === id); if (!t) return;
+    const copy = Object.assign({}, t); delete copy.deletedAt;
+    const d = periodDefs(); if (!d.some(x => x.id === id)){ d.push(copy); savePeriodDefs(d); }
+    saveDeletedDefaultIds(deletedDefaultIds().filter(x => x !== id));
+    periodDesarchivar(id); renderPeriodPanel(cats, containerId);
+  }));
   box.querySelectorAll('.p-del-task').forEach(b => b.addEventListener('click', () => {
-    if (!confirm('¿Borrar esta tarea periódica? (se pierde su historial de marcado)')) return;
+    if (!confirm('¿Borrar esta tarea? Su historial de marcado se conserva y queda guardado en "Tareas borradas".')) return;
     const id = b.dataset.id;
     const defs = periodDefs();
     const idx = defs.findIndex(t => t.id === id);
@@ -2029,12 +2037,14 @@ function wirePeriodPanel(containerId){
     const removed = defs[idx];
     const isDefault = PERIOD_DEFAULTS.some(t => t.id === id);
     defs.splice(idx, 1);
+    periodArchivar(removed);   /* el historial queda guardado */
     savePeriodDefs(defs);
     if (isDefault){ const del = deletedDefaultIds(); if (!del.includes(id)) del.push(id); saveDeletedDefaultIds(del); }
     renderPeriodPanel(cats, containerId);
     showUndoToast(`Tarea "${removed.label}" eliminada`, () => {
       const d2 = periodDefs();
       if (!d2.some(t => t.id === id)){ d2.splice(idx, 0, removed); savePeriodDefs(d2); }
+      periodDesarchivar(id);
       if (isDefault){ saveDeletedDefaultIds(deletedDefaultIds().filter(x => x !== id)); }
       renderPeriodPanel(cats, containerId);
     });
@@ -3054,6 +3064,32 @@ function migrateFondoFechasOnce(){
 }
 function savePeriodDefs(list){ lsSet('art-period-defs', list); }
 function periodEstado(){ return lsGet('art-period-estado', {}); }
+/* ===== archivo de tareas borradas: borrar una tarea NUNCA borra su historial ===== */
+function periodArchivo(){ return lsGet('art-period-archivo', []) || []; }
+function savePeriodArchivo(l){ lsSet('art-period-archivo', l); }
+function periodArchivar(t){
+  const a = periodArchivo().filter(x => x.id !== t.id);
+  a.push(Object.assign({}, t, { deletedAt: new Date().toISOString() }));
+  savePeriodArchivo(a);
+}
+function periodDesarchivar(id){ savePeriodArchivo(periodArchivo().filter(x => x.id !== id)); }
+function periodArchivoHtml(cats){
+  const arch = periodArchivo().filter(t => !cats || cats.includes(t.cat));
+  if (!arch.length) return '';
+  const est = periodEstado();
+  const fd = iso => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || ''); };
+  const rows = arch.map(t => {
+    const h = Object.entries(est[t.id] || {}).sort((a, b) => String(b[1]).localeCompare(String(a[1])));
+    const hist = h.length ? h.map(([apto, f]) => `<span style="display:inline-block;margin:2px 6px 2px 0;font-size:12.5px"><b>${esc(apto)}</b> · ${esc(fd(f))}</span>`).join('') : '<i style="color:#9b9484;font-size:12.5px">sin marcas registradas</i>';
+    return `<div style="border-top:1px solid #e7e2d6;padding:10px 0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><b style="flex:1">${esc(t.label)}</b>
+        <span style="font-size:12px;color:#7b7466">borrada el ${esc(fd(t.deletedAt))}</span>
+        <button class="p-restore-arch" data-id="${esc(t.id)}" style="border:1px solid #e7e2d6;background:#fff;border-radius:8px;padding:4px 10px;cursor:pointer;color:#0FA3A3;font-weight:700">↺ Restaurar</button></div>
+      <div style="margin-top:4px">${hist}</div></div>`;
+  }).join('');
+  return `<details style="margin-top:18px;background:#fff;border:1px solid #e7e2d6;border-radius:12px;padding:10px 14px"><summary style="cursor:pointer;font-weight:700">Tareas borradas — historial guardado (${arch.length})</summary>${rows}</details>`;
+}
+
 function savePeriodEstado(o){ lsSet('art-period-estado', o); }
 /* ventana "actual" (vigente hoy) de una tarea periódica; null si es manual (sin período) */
 function periodCurrentWindow(task, day){
