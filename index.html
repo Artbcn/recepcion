@@ -617,6 +617,7 @@ tr.has-fondo td{background:#FEFBF5}
  <div class="panel" id="panelHist">
  <div class="bar">
  <span class="count" id="countHist"></span>
+ <button class="btn" id="btnRecHist" title="Rearma los días que faltan usando los partes que ya se publicaron">↺ Recuperar días faltantes</button>
  <button class="btn btn-primary" id="btnXlsHist" style="margin-left:auto">Descargar historial completo (Excel)</button>
  </div>
  <div id="histList"></div>
@@ -981,8 +982,9 @@ $('refDate').addEventListener('change', () => {
   try{ sessionStorage.setItem('art-lastbase-tab', newBaseISO); }catch(e){}
   const prev = syncTareasDate();
   /* si el informe cambió de fecha, movemos lo archivado en vez de dejar un duplicado */
+  /* OJO: antes acá se BORRABA el historial del día anterior al cambiar de fecha, y por eso aparecían saltos.
+     Ahora el historial nunca se borra solo: si queda un duplicado, se borra a mano con la ✕. */
   if (prev !== tareasISO && archivedISO === prev){
-    try{ localStorage.removeItem(HKEY + prev); }catch(e){}
     archivedISO = null;
   }
   renderCal(); renderHoy(); saveState(); renderHist();
@@ -2730,6 +2732,36 @@ function exportDayXlsx(h){
   XLSX.utils.book_append_sheet(wb, tareasSheet(sortSnap(h.tasks), dt, h.notes), 'Tareas Pisos');
   XLSX.writeFile(wb, `Tareas_pisos_${pad(d)}_${pad(m)}_${y}.xlsx`);
 }
+/* Recupera días que faltan en el historial a partir de los partes publicados (limp_parte). */
+async function recuperarHistorial(btn){
+  if (!sb){ showError('Sin conexión a Supabase: no puedo recuperar.'); return; }
+  const orig = btn.textContent; btn.textContent = 'Buscando…'; btn.disabled = true;
+  try{
+    const { data, error } = await sb.from('limp_parte').select('fecha,data,updated_at').order('fecha');
+    if (error) throw error;
+    const parseD = (str) => { const m = String(str || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; };
+    let n = 0;
+    for (const row of (data || [])){
+      const d = row.data || {}; const pisos = d.pisos || [];
+      if (!pisos.length) continue;
+      if (localStorage.getItem(HKEY + row.fecha)) continue;   /* ese día ya está en el historial */
+      const ts = pisos.map(p => {
+        const [ac, ju, ni, ini] = String(p.pax || '').split('·');
+        return { hab: p.hab, tipo: p.tipo, obs: p.obs, huesped: p.huesped || '', ac: ac || '', ju: ju || '', ni: ni || '', ini: ini || '',
+          cama: p.cama || '', coment: p.coment || '', hora: p.horaLleg || '', horaSalida: p.horaSalida || '', priori: p.priori,
+          llegada: parseD(p.llegada), salida: parseD(p.salida), esSalida: p.tipo === 'salida' || p.obs === 'sucia' };
+      });
+      const snap = { iso: row.fecha, tasks: ts, notes: d.notas || '', savedAt: new Date(row.updated_at || Date.now()).getTime(), recuperado: true };
+      try{ localStorage.setItem(HKEY + row.fecha, serialize(snap)); n++; }catch(e){}
+    }
+    btn.textContent = orig; btn.disabled = false;
+    renderHist();
+    alert(n ? ('Se recuperaron ' + n + ' día(s) del historial a partir de los partes publicados.') : 'No faltaba ningún día: todo lo publicado ya está en el historial.');
+  }catch(e){
+    btn.textContent = orig; btn.disabled = false;
+    showError('No pude recuperar el historial: ' + (e && e.message ? e.message : e));
+  }
+}
 function renderHist(){
   const hist = histList();
   const cur = tareasISO;
@@ -4139,6 +4171,7 @@ $('sortAlf').addEventListener('click', () => { sortMode='alf'; setSortBtn('sortA
 function setSortBtn(on){
   for (const id of ['sortPrio','sortHab','sortAlf']) $(id).classList.toggle('on', id === on);
 }
+$('btnRecHist').addEventListener('click', e => recuperarHistorial(e.currentTarget));
 $('btnXlsHist').addEventListener('click', exportHistXlsx);
 $('btnReset').addEventListener('click', resetAll);
 $('notesTareas').addEventListener('input', saveState);
