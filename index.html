@@ -1789,7 +1789,7 @@ function periodLabel(p){
   }
   if (p.type === 'interval') return `Cada ${p.months} mes${p.months===1?'':'es'}`;
   if (p.type === 'windows') return (p.ranges||[]).map(([a,b]) => a===b ? MESES_C[a-1] : `${MESES_C[a-1]}-${MESES_C[b-1]}`).join(' y ');
-  if (p.type === 'daterange') return `Del ${p.d1} ${MESES_C[p.m1-1]} al ${p.d2} ${MESES_C[p.m2-1]} (todos los años)`;
+  if (p.type === 'daterange') return `Del ${p.d1} ${MESES_C[p.m1-1]} al ${p.d2} ${MESES_C[p.m2-1]} ${p.anio ? '(' + p.anio + ')' : '(todos los años)'}`;
   if (p.type === 'seasonal_daily') return `Diaria en ${(p.dailyMonths||[]).map(m=>MESES_C[m-1]).join('/')} · mensual el resto`;
   return '—';
 }
@@ -1812,6 +1812,11 @@ function spreadMonths(n){
   const out = []; const step = 12 / n;
   for (let i=0;i<n;i++) out.push((Math.round(i*step) % 12) + 1);
   return [...new Set(out)];
+}
+function anioSelect(id, val){
+  const y0 = new Date().getFullYear();
+  const opts = ['<option value="">todos los años</option>'].concat(Array.from({length:7}, (_,i) => y0 - 1 + i).map(a => `<option value="${a}"${a===val?' selected':''}>${a}</option>`)).join('');
+  return `<span style="display:inline-flex;gap:6px;align-items:center"><span style="font-size:12px;color:var(--ink-soft)">año</span><select class="pe-anio" data-id="${esc(id)}" style="border:1px solid var(--line);border-radius:8px;padding:5px 6px">${opts}</select></span>`;
 }
 function periodEditorHtml(task){
   const p = task.period || { type:'manual' };
@@ -1839,6 +1844,7 @@ function periodEditorHtml(task){
       <span style="font-size:12px;color:var(--ink-soft)">al día</span>
       ${daySelect('pe-td',task.id,'diaFin',diaFin)}
       <span style="font-size:12px;color:var(--ink-soft)">de cada mes (dejalo en 1 y 31 para todo el mes)</span>
+      ${anioSelect(task.id, isTimes ? p.anio : null)}
     </span>
     <span class="pe-rolling-wrap" style="display:${isRolling?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap;width:100%">
       <span style="display:inline-flex;gap:6px;align-items:center">cada <input type="number" min="1" class="pe-rolling-n" data-id="${esc(task.id)}" value="${isRolling ? (p.months||1) : 1}" style="width:48px;border:1px solid var(--line);border-radius:8px;padding:5px 6px"> mes(es), contados desde que se marca hecha</span>
@@ -1851,6 +1857,7 @@ function periodEditorHtml(task){
     <span class="pe-daterange-wrap" style="display:${isDaterange?'inline-flex':'none'};gap:6px;align-items:center;flex-wrap:wrap">
       desde ${daySelect('pe-dr',task.id,'d1',dr.d1)} ${monthSelect2('pe-dr',task.id,'m1',dr.m1)}
       hasta ${daySelect('pe-dr',task.id,'d2',dr.d2)} ${monthSelect2('pe-dr',task.id,'m2',dr.m2)}
+      ${anioSelect(task.id, isDaterange ? p.anio : null)}
     </span>`;
 }
 /* renderiza una pestaña de tareas periódicas (limpieza o mantenimiento+comunes) en su propio contenedor */
@@ -1880,7 +1887,7 @@ function renderPeriodPanel(cats, containerId){
         <button class="p-del-task" data-id="${esc(task.id)}" data-container="${esc(containerId)}" style="border:none;background:transparent;color:#c0392b;cursor:pointer">✕</button>
       </div>
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${periodEditorHtml(task)}
-        <span style="color:var(--ink-soft);font-size:12.5px">${win ? '· vigente hasta ' + fmtShort(win.end) : ''}</span>
+        <span style="color:var(--ink-soft);font-size:12.5px">${win ? '· vigente hasta ' + fmtShort(win.end) + (task.period && task.period.anio ? ' ' + task.period.anio : '') : ((task.period && task.period.anio && task.period.anio < today.getFullYear()) ? '· ese año ya pasó' : '')}</span>
       </div>
       <div id="ptrack-${esc(task.id)}" style="margin-top:10px"></div>
     </div>`;
@@ -2080,6 +2087,11 @@ function wirePeriodPanel(containerId){
     d.period[sel.dataset.field] = parseInt(sel.value);
     savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
   }));
+  box.querySelectorAll('.pe-anio').forEach(sel => sel.addEventListener('change', () => {
+    const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d || !d.period) return;
+    if (sel.value) d.period.anio = parseInt(sel.value); else delete d.period.anio;
+    savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
+  }));
   box.querySelectorAll('.pe-td').forEach(sel => sel.addEventListener('change', () => {
     const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d || !d.period) return;
     d.period[sel.dataset.field] = parseInt(sel.value);
@@ -2171,6 +2183,8 @@ function renderPeriodCalendarPanel(){
   }));
   const exportBtn = document.getElementById('btnExportControl');
   if (exportBtn) exportBtn.addEventListener('click', exportControlExcel);
+  const imB = document.getElementById('btnImportControl'), imF = document.getElementById('fileImportControl');
+  if (imB && imF){ imB.addEventListener('click', () => imF.click()); imF.addEventListener('change', () => { if (imF.files[0]) importarControlExcel(imF.files[0]); imF.value = ''; }); }
   const bkB = document.getElementById('btnCopiaSeg'); if (bkB) bkB.addEventListener('click', () => descargarCopiaSeguridad(bkB));
   const rsB = document.getElementById('btnRescatarCtl'); if (rsB) rsB.addEventListener('click', () => rescatarControl(rsB));
   const ctlSave = (inp, raw) => {
@@ -2227,7 +2241,7 @@ function renderControlTableHtml(){
   const apts = controlApartments();
   let html = '<h3 style="margin:28px 0 10px;border-top:1px solid var(--line);padding-top:18px;font-size:15px">Control por apartamento \u2014 \u00faltima vez que se hizo</h3>';
   html += '<div class="hint" style="text-align:left;margin-bottom:12px">Para llevar registro y, si hace falta, mostrarle a tu jefa cu\u00e1ndo se hizo cada tarea en cada apartamento. <b>Tocá una fecha para corregirla</b> (o vaciala para borrarla); el Excel sale con lo que ves.</div>';
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn" id="btnExportControl">\u2b07 Exportar a Excel</button><button class="btn" id="btnCopiaSeg">\ud83d\udcbe Copia de seguridad completa</button><button class="btn" id="btnRescatarCtl">\ud83d\udedf Rescatar datos faltantes</button></div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"><button class="btn" id="btnExportControl">\u2b07 Exportar a Excel</button><button class="btn" id="btnImportControl">\u2b06 Importar Excel actualizado</button><input type="file" id="fileImportControl" accept=".xlsx,.xls,.csv" style="display:none"><button class="btn" id="btnCopiaSeg">\ud83d\udcbe Copia de seguridad completa</button><button class="btn" id="btnRescatarCtl">\ud83d\udedf Rescatar datos faltantes</button></div>';
   if (!apts.length || !aptTasks.length){
     return html + '<div class="none" style="display:block">Todav\u00eda no hay datos registrados.</div>';
   }
@@ -2244,6 +2258,54 @@ function renderControlTableHtml(){
   }
   html += '</table></div>';
   return html;
+}
+/* importar un Excel actualizado al registro de control (mismo formato que el exportado) */
+function importarControlExcel(file){
+  const rd = new FileReader();
+  rd.onerror = () => alert('No pude leer el archivo.');
+  rd.onload = () => {
+    try{
+      if (typeof XLSX === 'undefined') throw new Error('la librería de Excel no cargó (revisá tu conexión)');
+      const wb = XLSX.read(new Uint8Array(rd.result), { type: 'array' });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+      if (!rows.length) throw new Error('el Excel está vacío');
+      const norm = x => String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+      const aptTasks = periodDefs().filter(t => t.scope === 'apto');
+      const head = rows[0];
+      const cols = {}; const sinMatch = [];
+      for (let c = 1; c < head.length; c++){
+        const lab = norm(String(head[c]).replace(/\s*\((limpieza|mantenimiento)\)\s*$/i, ''));
+        if (!lab) continue;
+        const t = aptTasks.find(x => norm(x.label) === lab);
+        if (t) cols[c] = t; else sinMatch.push(String(head[c]));
+      }
+      const aISO = v => {
+        if (typeof v === 'number' && v > 20000 && v < 90000){ const d = new Date(Math.round((v - 25569) * 86400000)); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`; }
+        return ctlParse(v);
+      };
+      const est = JSON.parse(JSON.stringify(periodEstado()));
+      let cambios = 0, nuevas = 0, iguales = 0, aptsOmitidos = 0;
+      for (let r = 1; r < rows.length; r++){
+        const apt = String(rows[r][0] || '').trim();
+        if (!/^\d{3}$/.test(apt)){ if (apt) aptsOmitidos++; continue; }
+        for (const c of Object.keys(cols)){
+          const v = aISO(rows[r][c]); if (!v) continue;   /* celda vacía: no borra nada */
+          const id = cols[c].id; est[id] = est[id] || {};
+          if (est[id][apt] === v){ iguales++; continue; }
+          if (est[id][apt] === undefined) nuevas++; else cambios++;
+          est[id][apt] = v;
+        }
+      }
+      if (!cambios && !nuevas){ alert('No hay cambios: todo lo que trae el Excel ya está en el registro.' + (sinMatch.length ? '\n\nColumnas que no reconocí: ' + sinMatch.join(', ') : '')); return; }
+      const msg = `Voy a actualizar el registro con el Excel:\n\n• ${nuevas} fechas nuevas\n• ${cambios} fechas modificadas\n• ${iguales} sin cambios\n(las celdas vacías del Excel NO borran nada)` + (sinMatch.length ? `\n\nColumnas que no reconocí y se ignoran: ${sinMatch.join(', ')}` : '') + '\n\n¿Aplicar?';
+      if (!confirm(msg)) return;
+      try{ localStorage.setItem('bk-control-pre-import-' + toISO(new Date()), localStorage.getItem('art-period-estado') || '{}'); }catch(e){}
+      savePeriodEstado(est);
+      renderPeriodCalendarPanel();
+      alert('Listo, registro actualizado.');
+    }catch(e){ alert('No pude importar el Excel: ' + e.message); }
+  };
+  rd.readAsArrayBuffer(file);
 }
 function exportControlExcel(){
   try{
@@ -3261,7 +3323,7 @@ function periodCurrentWindow(task, day){
   if (p.type === 'times' && p.months && p.months.length){
     let best = null;
     const diaIni = p.diaIni || 1;
-    for (const yy of [y, y+1]){
+    for (const yy of (p.anio ? [p.anio] : [y, y+1])){
       for (const m of p.months){
         const ldm = lastDayOfMonth(yy, m);
         const diaFin = Math.min(p.diaFin || 31, ldm);
@@ -3283,7 +3345,7 @@ function periodCurrentWindow(task, day){
   }
   if (p.type === 'daterange' && p.d1 && p.m1 && p.d2 && p.m2){
     let best = null;
-    for (const yy of [y-1, y, y+1]){
+    for (const yy of (p.anio ? [p.anio] : [y-1, y, y+1])){
       const start = new Date(yy, p.m1-1, p.d1);
       const wraps = (p.m2 < p.m1) || (p.m2 === p.m1 && p.d2 < p.d1);
       const end = new Date(yy + (wraps?1:0), p.m2-1, p.d2);
