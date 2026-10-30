@@ -1861,6 +1861,36 @@ function periodEditorHtml(task){
     </span>`;
 }
 /* renderiza una pestaña de tareas periódicas (limpieza o mantenimiento+comunes) en su propio contenedor */
+/* ===== "Última vez por apartamento" dentro de cada tarea (para llevar el control de fechas) ===== */
+function ultimaVezHtml(task){
+  const est = periodEstado()[task.id] || {};
+  const cnt = Object.keys(est).filter(k => est[k]).length;
+  const row = apt => {
+    const d = est[apt] || '';
+    return `<div style="display:inline-flex;align-items:center;gap:4px;margin:3px 10px 3px 0;white-space:nowrap"><b style="font-family:'IBM Plex Mono',monospace;font-size:12px;width:32px">${esc(apt)}</b>`
+      + `<input type="text" class="uv-txt" data-id="${esc(task.id)}" data-apt="${esc(apt)}" value="${esc(ctlShow(d))}" placeholder="dd/mm/aaaa" style="width:100px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12px;padding:3px 4px;text-align:center;${d?(ctlIsISO(d)?'color:#128a4a;font-weight:700':'color:#2c5db0;font-weight:700'):''}">`
+      + `<input type="date" class="uv-pick" data-id="${esc(task.id)}" data-apt="${esc(apt)}" value="${ctlIsISO(d)?esc(d):''}" tabindex="-1" title="Elegir del calendario" style="width:22px;border:0;background:transparent;padding:0;cursor:pointer;opacity:.7"></div>`;
+  };
+  const apts = [...new Set([...ALL_HABS, ...Object.keys(est)])].sort((a,b) => String(a).localeCompare(String(b), undefined, {numeric:true}));
+  return `<div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px">Escrib\u00ed la \u00faltima fecha en que se hizo (dd/mm/aaaa) o eleg\u00ed del calendario \u{1F4C5}. Vac\u00edo = sin dato.</div>` + apts.map(row).join('');
+}
+function wireUltimaVez(det, onChange){
+  const save = (id, apt, raw, txt, pick) => {
+    const e = periodEstado(); const v = ctlParse(raw);
+    if (v){ e[id] = e[id] || {}; e[id][apt] = v; } else if (e[id]){ delete e[id][apt]; }
+    savePeriodEstado(e);
+    txt.value = ctlShow(v); pick.value = ctlIsISO(v) ? v : '';
+    txt.style.color = !v ? '' : (ctlIsISO(v) ? '#128a4a' : '#2c5db0'); txt.style.fontWeight = v ? '700' : '400';
+    const sum = det.querySelector('summary .uv-n'); if (sum){ const pe = periodEstado()[id] || {}; sum.textContent = Object.keys(pe).filter(k => pe[k]).length; }
+    if (onChange) onChange();
+  };
+  det.querySelectorAll('.uv-txt').forEach(t => t.addEventListener('change', () => save(t.dataset.id, t.dataset.apt, t.value, t, t.parentNode.querySelector('.uv-pick'))));
+  det.querySelectorAll('.uv-pick').forEach(p => p.addEventListener('change', () => save(p.dataset.id, p.dataset.apt, p.value, p.parentNode.querySelector('.uv-txt'), p)));
+}
+function ultimaVezDetails(task){
+  const n = Object.keys(periodEstado()[task.id] || {}).filter(k => periodEstado()[task.id][k]).length;
+  return `<details class="p-ultima" data-id="${esc(task.id)}" style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--ink-soft)">\u{1F4C5} \u00daltima vez por apartamento (<span class="uv-n">${n}</span> cargados)</summary><div class="uv-body" style="padding-top:6px"></div></details>`;
+}
 function renderPeriodPanel(cats, containerId){
   const box = document.getElementById(containerId); if (!box) return;
   const defs = periodDefs().filter(t => cats.includes(t.cat));
@@ -1891,6 +1921,7 @@ function renderPeriodPanel(cats, containerId){
         <span style="color:var(--ink-soft);font-size:12.5px">${task.inactiva ? '· \u23f8 inactiva (no se ofrece)' : win ? '· vigente hasta ' + fmtShort(win.end) + (task.period && task.period.anio ? ' ' + task.period.anio : '') : ((task.period && task.period.anio && task.period.anio < today.getFullYear()) ? '· ese año ya pasó' : '')}</span>
       </div>
       <div id="ptrack-${esc(task.id)}" style="margin-top:10px"></div>
+      ${task.scope==='apto' ? ultimaVezDetails(task) : ''}
     </div>`;
   }
   if (!defs.length) html += '<div class="none" style="display:block">Sin tareas todavía.</div>';
@@ -2080,6 +2111,12 @@ function wirePeriodPanel(containerId){
     const defs = periodDefs(); const d = defs.find(x => x.id === cb.dataset.id); if (!d) return;
     if (cb.checked) d.inactiva = true; else delete d.inactiva;
     savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
+  }));
+  box.querySelectorAll('details.p-ultima').forEach(det => det.addEventListener('toggle', () => {
+    if (!det.open) return;
+    const body = det.querySelector('.uv-body'); const task = periodDefs().find(x => x.id === det.dataset.id); if (!task) return;
+    body.innerHTML = ultimaVezHtml(task);
+    wireUltimaVez(det, () => { try{ renderPeriodTracker(task); }catch(e){} });
   }));
   box.querySelectorAll('.pe-veces').forEach(sel => sel.addEventListener('change', () => {
     const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d) return;
