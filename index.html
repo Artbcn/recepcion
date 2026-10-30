@@ -480,9 +480,30 @@ tr.has-fondo td{background:#FEFBF5}
  <button id="tabBtnFondoP">Limpieza de fondo</button>
  <button id="tabBtnMantP">Mant. preventivo</button>
  <button id="tabBtnCalP">Calendario</button>
+ <button id="tabBtnDiario">Diario</button>
  </div>
 
  <div class="fondo-banner" id="fondoBanner" style="display:none"></div>
+
+ <!-- ============ DIARIO (libro de recepción: incidencias y estados) ============ -->
+ <div class="panel" id="panelDiario">
+ <div class="bar" style="gap:8px">
+ <button class="btn" id="diaPrev" aria-label="Día anterior">‹</button>
+ <input type="date" id="diaFecha" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;font-weight:700">
+ <button class="btn" id="diaNext" aria-label="Día siguiente">›</button>
+ <button class="btn" id="diaHoy">Hoy</button>
+ <span style="display:inline-flex;border:1.5px solid var(--line);border-radius:10px;overflow:hidden">
+ <button class="btn dia-vista on" data-v="dia" style="border-radius:0">Día</button>
+ <button class="btn dia-vista" data-v="pend" style="border-radius:0" id="diaVistaPend">Pendientes</button>
+ <button class="btn dia-vista" data-v="todo" style="border-radius:0">Todo</button>
+ </span>
+ <input type="search" id="diaBuscar" placeholder="Buscar…" style="border:1.5px solid var(--line);border-radius:10px;padding:9px 10px;font:inherit;min-width:140px">
+ <button class="btn" id="diaListas" title="Cambiar tipos, turnos, estados y personas">⚙ Listas</button>
+ <button class="btn btn-primary" id="diaExcel" style="margin-left:auto">⬇ Excel</button>
+ </div>
+ <div id="diaListasBox" style="display:none"></div>
+ <div id="diaBody"></div>
+ </div>
 
  <!-- ============ HOY · MENSAJES ============ -->
  <div class="panel on" id="panelHoy">
@@ -4356,9 +4377,178 @@ async function exportParte(share){
   forceDownload(blob, out.name);
 }
 
+/* ================= DIARIO (libro de recepción) =================
+   Una clave por día (art-diario-AAAA-MM-DD) con las entradas de ese día. Se sincroniza sola con la nube.
+   Al guardar se vuelve a leer lo que hay en la nube y se fusiona entrada por entrada (gana la más nueva),
+   así dos personas escribiendo a la vez no se pisan. */
+const DIA_PREFIX = 'art-diario-';
+const DIA_DEF_LISTAS = {
+  tipos: ['Llegada / Check-in','Salida / Check-out','Incidencia','Queja / Reclamación','Llamada','Email','Reserva','Cancelación','Mantenimiento','Limpieza','Paquete / Mensajería','Objeto perdido','Caja / Cobro','Aviso al equipo','Otro'],
+  turnos: ['Mañana','Tarde','Noche'],
+  estados: ['Pendiente','En curso','Resuelto','Informativo'],
+  personas: ['Persona 1','Persona 2']
+};
+const DIA_COLOR = { 'Pendiente':'#FDF0D9', 'En curso':'#E6EEFC', 'Resuelto':'#E3F4EA', 'Informativo':'#F1EFE9' };
+let diaISO = null, diaVista = 'dia';
+const DIA_CACHE = {};          /* iso -> entradas (memoria, incluye lo traído de la nube) */
+const DIA_TIMERS = {};
+function diaListas(){ const l = lsGet('art-diario-listas', null) || {}; const o = {}; for (const k of Object.keys(DIA_DEF_LISTAS)) o[k] = (l[k] && l[k].length) ? l[k] : DIA_DEF_LISTAS[k]; return o; }
+function diaRead(iso){ if (DIA_CACHE[iso]) return DIA_CACHE[iso]; const v = lsGet(DIA_PREFIX + iso, []); DIA_CACHE[iso] = Array.isArray(v) ? v : []; return DIA_CACHE[iso]; }
+function diaMerge(a, b){
+  const m = new Map();
+  for (const e of [...(a || []), ...(b || [])]){ if (!e || !e.id) continue; const p = m.get(e.id); if (!p || (e.u || 0) >= (p.u || 0)) m.set(e.id, e); }
+  return [...m.values()].sort((x, y) => (x.c || 0) - (y.c || 0));
+}
+function diaSave(iso){   /* con pausa de medio segundo para no guardar letra por letra */
+  clearTimeout(DIA_TIMERS[iso]);
+  DIA_TIMERS[iso] = setTimeout(async () => {
+    let list = DIA_CACHE[iso] || [];
+    try{
+      if (sb){
+        const { data, error } = await sb.from('limp_kv').select('v').eq('k', DIA_PREFIX + iso).maybeSingle();
+        if (!error && data && data.v){ const remoto = typeof data.v === 'string' ? JSON.parse(data.v) : data.v; list = diaMerge(remoto, list); DIA_CACHE[iso] = list; }
+      }
+    }catch(e){}
+    lsSet(DIA_PREFIX + iso, list);
+    diaPendBadge();
+  }, 500);
+}
+async function diaTraerNube(){
+  if (!sb) return;
+  try{
+    const { data, error } = await sb.from('limp_kv').select('k,v').like('k', DIA_PREFIX + '%');
+    if (error || !data) return;
+    for (const r of data){ const iso = r.k.slice(DIA_PREFIX.length); if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) continue; const v = typeof r.v === 'string' ? JSON.parse(r.v) : r.v; DIA_CACHE[iso] = diaMerge(v, diaRead(iso)); }
+  }catch(e){}
+}
+function diaAllIsos(){
+  const s = new Set(Object.keys(DIA_CACHE));
+  for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k && k.startsWith(DIA_PREFIX) && /^\d{4}-\d{2}-\d{2}$/.test(k.slice(DIA_PREFIX.length))) s.add(k.slice(DIA_PREFIX.length)); }
+  return [...s].sort();
+}
+function diaAbiertas(){ const out = []; for (const iso of diaAllIsos()) for (const e of diaRead(iso)) if (!e.x && (e.e === 'Pendiente' || e.e === 'En curso')) out.push({ iso, e }); return out; }
+function diaPendBadge(){ const b = $('diaVistaPend'); if (b) b.textContent = 'Pendientes (' + diaAbiertas().length + ')'; const t = $('tabBtnDiario'); if (t){ const n = diaAbiertas().length; t.textContent = n ? 'Diario (' + n + ')' : 'Diario'; } }
+function diaNuevoId(){ return 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function diaTurnoAhora(){ const h = new Date().getHours(); const t = diaListas().turnos; return h < 15 ? t[0] : (h < 22 ? (t[1] || t[0]) : (t[2] || t[t.length - 1])); }
+function diaAgregar(){
+  const L = diaListas(); const arr = diaRead(diaISO); const now = new Date();
+  let por = ''; try{ por = localStorage.getItem('diario-por') || ''; }catch(e){}
+  arr.push({ id: diaNuevoId(), h: pad(now.getHours()) + ':' + pad(now.getMinutes()), t: diaTurnoAhora(), ti: '', d: '', r: '', p: por || L.personas[0], e: L.estados[0], n: '', c: Date.now(), u: Date.now() });
+  diaSave(diaISO); diaRender();
+  setTimeout(() => { const tx = document.querySelector('#diaBody tr[data-id="' + arr[arr.length - 1].id + '"] textarea.dia-d'); if (tx) tx.focus(); }, 30);
+}
+function diaOpts(list, val, vacio){
+  const l = (val && !list.includes(val)) ? [val, ...list] : list;
+  return (vacio ? '<option value="">' + esc(vacio) + '</option>' : '') + l.map(x => `<option value="${esc(x)}"${x === val ? ' selected' : ''}>${esc(x)}</option>`).join('');
+}
+function diaFila(iso, e, conFecha){
+  const L = diaListas(); const bg = DIA_COLOR[e.e] || '#fff';
+  const st = 'border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12.5px;padding:4px 5px;background:#fff;width:100%';
+  return `<tr data-id="${esc(e.id)}" data-iso="${iso}" style="background:${bg}">
+    ${conFecha ? `<td style="padding:6px;white-space:nowrap"><button class="dia-ir" data-iso="${iso}" style="border:none;background:none;color:var(--towel);font-weight:700;cursor:pointer;text-decoration:underline">${iso.slice(8)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}</button></td>` : ''}
+    <td style="padding:6px"><input type="time" class="dia-f" data-f="h" value="${esc(e.h || '')}" style="${st};width:92px"></td>
+    <td style="padding:6px"><select class="dia-f" data-f="t" style="${st};min-width:84px">${diaOpts(L.turnos, e.t)}</select></td>
+    <td style="padding:6px"><select class="dia-f" data-f="ti" style="${st};min-width:150px">${diaOpts(L.tipos, e.ti, '— tipo —')}</select></td>
+    <td style="padding:6px;min-width:240px"><textarea class="dia-f dia-d" data-f="d" rows="2" placeholder="Qué ha pasado…" style="${st};resize:vertical">${esc(e.d || '')}</textarea></td>
+    <td style="padding:6px"><input type="text" class="dia-f" data-f="r" value="${esc(e.r || '')}" placeholder="Cliente / hab. / ref." style="${st};min-width:130px"></td>
+    <td style="padding:6px"><select class="dia-f" data-f="p" style="${st}">${diaOpts(L.personas, e.p)}</select></td>
+    <td style="padding:6px"><select class="dia-f dia-est" data-f="e" style="${st};font-weight:700">${diaOpts(L.estados, e.e)}</select></td>
+    <td style="padding:6px;min-width:200px"><textarea class="dia-f" data-f="n" rows="2" placeholder="Pendiente para el siguiente turno / notas" style="${st};resize:vertical">${esc(e.n || '')}</textarea></td>
+    <td style="padding:6px"><button class="dia-del" title="Borrar entrada" style="border:none;background:none;color:#c0392b;cursor:pointer;font-size:16px">✕</button></td>
+  </tr>`;
+}
+function diaRender(){
+  const body = $('diaBody'); if (!body) return;
+  const q = ($('diaBuscar').value || '').trim().toLowerCase();
+  $('diaFecha').value = diaISO;
+  document.querySelectorAll('.dia-vista').forEach(b => b.classList.toggle('on', b.dataset.v === diaVista));
+  document.querySelectorAll('.dia-vista').forEach(b => { b.style.background = b.dataset.v === diaVista ? 'var(--ink)' : 'var(--card)'; b.style.color = b.dataset.v === diaVista ? '#fff' : 'var(--ink)'; });
+  $('diaFecha').style.display = diaVista === 'dia' ? '' : 'none'; $('diaPrev').style.display = $('diaNext').style.display = $('diaHoy').style.display = diaVista === 'dia' ? '' : 'none';
+  const match = e => !q || [e.d, e.r, e.n, e.ti, e.p, e.e].some(x => String(x || '').toLowerCase().includes(q));
+  let rows = [], titulo = '', conFecha = false;
+  if (diaVista === 'dia'){
+    const f = fromISO(diaISO); titulo = f.toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+    rows = diaRead(diaISO).filter(e => !e.x && match(e)).map(e => ({ iso: diaISO, e }));
+  } else {
+    conFecha = true;
+    const all = []; for (const iso of diaAllIsos()) for (const e of diaRead(iso)) if (!e.x && match(e)) all.push({ iso, e });
+    rows = diaVista === 'pend' ? all.filter(x => x.e.e === 'Pendiente' || x.e.e === 'En curso') : all.slice().reverse();
+    if (diaVista === 'todo') rows = rows.slice(0, 300);
+    titulo = diaVista === 'pend' ? 'Entradas pendientes y en curso (de todos los días)' : 'Todas las entradas' + (rows.length >= 300 ? ' (últimas 300)' : '');
+  }
+  const th = 'text-align:left;padding:8px 6px;border-bottom:1.5px solid var(--line);font-size:12px;color:var(--ink-soft);white-space:nowrap';
+  let h = `<div style="display:flex;align-items:center;gap:10px;margin:6px 0 10px;flex-wrap:wrap"><b style="font-size:16px">${esc(titulo.charAt(0).toUpperCase() + titulo.slice(1))}</b><span class="count">${rows.length} entrada${rows.length === 1 ? '' : 's'}</span>${diaVista === 'dia' ? '<button class="btn btn-primary" id="diaAdd" style="margin-left:auto">+ Nueva entrada</button>' : ''}</div>`;
+  if (!rows.length){
+    h += `<div class="none" style="display:block">${diaVista === 'pend' ? '🎉 No hay nada pendiente.' : 'Todavía no hay entradas' + (diaVista === 'dia' ? ' este día. Tocá “+ Nueva entrada”.' : '.')}</div>`;
+  } else {
+    h += `<div class="table-card"><table style="border-collapse:collapse;width:100%"><thead><tr>${conFecha ? `<th style="${th}">Fecha</th>` : ''}<th style="${th}">Hora</th><th style="${th}">Turno</th><th style="${th}">Tipo</th><th style="${th}">Descripción / qué ha pasado</th><th style="${th}">Cliente / Hab. / Ref.</th><th style="${th}">Registrado por</th><th style="${th}">Estado</th><th style="${th}">Pendiente para siguiente turno / notas</th><th></th></tr></thead><tbody>${rows.map(x => diaFila(x.iso, x.e, conFecha)).join('')}</tbody></table></div>`;
+  }
+  body.innerHTML = h;
+  const add = $('diaAdd'); if (add) add.addEventListener('click', diaAgregar);
+  body.querySelectorAll('.dia-ir').forEach(b => b.addEventListener('click', () => { diaISO = b.dataset.iso; diaVista = 'dia'; diaRender(); }));
+  body.querySelectorAll('tr[data-id]').forEach(tr => {
+    const iso = tr.dataset.iso, id = tr.dataset.id;
+    const get = () => diaRead(iso).find(x => x.id === id);
+    tr.querySelectorAll('.dia-f').forEach(inp => {
+      const ev = (inp.tagName === 'TEXTAREA' || inp.type === 'text') ? 'input' : 'change';
+      inp.addEventListener(ev, () => {
+        const e = get(); if (!e) return;
+        e[inp.dataset.f] = inp.value; e.u = Date.now();
+        if (inp.dataset.f === 'p'){ try{ localStorage.setItem('diario-por', inp.value); }catch(_){} }
+        if (inp.dataset.f === 'e') tr.style.background = DIA_COLOR[e.e] || '#fff';
+        diaSave(iso);
+        if (inp.dataset.f === 'e'){ diaPendBadge(); if (diaVista === 'pend' && !(e.e === 'Pendiente' || e.e === 'En curso')) setTimeout(diaRender, 400); }
+      });
+    });
+    tr.querySelector('.dia-del').addEventListener('click', () => {
+      const e = get(); if (!e) return;
+      if (!confirm('¿Borrar esta entrada?' + (e.d ? '\n\n' + String(e.d).slice(0, 120) : ''))) return;
+      e.x = true; e.u = Date.now(); diaSave(iso); diaPendBadge(); diaRender();
+    });
+  });
+  diaPendBadge();
+}
+function diaListasUI(){
+  const box = $('diaListasBox'); const L = diaListas();
+  if (box.style.display !== 'none'){ box.style.display = 'none'; return; }
+  const campo = (k, t) => `<label style="display:block;margin:8px 0"><b style="font-size:13px">${t}</b> <span style="font-size:12px;color:var(--ink-soft)">(separados por coma)</span><textarea id="dl-${k}" rows="2" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:6px;font:inherit">${esc(L[k].join(', '))}</textarea></label>`;
+  box.innerHTML = `<div class="notes-card" style="margin-bottom:12px">${campo('personas', 'Personas (quién registra)')}${campo('turnos', 'Turnos')}${campo('estados', 'Estados')}${campo('tipos', 'Tipos')}<div style="display:flex;gap:8px;margin-top:6px"><button class="btn btn-primary" id="dlGuardar">Guardar listas</button><button class="btn" id="dlReset">Volver a las originales</button></div><div style="font-size:12px;color:var(--ink-soft);margin-top:6px">Los estados "Pendiente" y "En curso" son los que cuentan como abiertos; mantené esos nombres.</div></div>`;
+  box.style.display = 'block';
+  $('dlGuardar').addEventListener('click', () => {
+    const o = {}; for (const k of Object.keys(DIA_DEF_LISTAS)) o[k] = $('dl-' + k).value.split(',').map(x => x.trim()).filter(Boolean);
+    lsSet('art-diario-listas', o); box.style.display = 'none'; diaRender();
+  });
+  $('dlReset').addEventListener('click', () => { if (confirm('¿Volver a las listas originales?')){ localStorage.removeItem('art-diario-listas'); box.style.display = 'none'; diaRender(); } });
+}
+function diaExcel(){
+  try{
+    if (typeof XLSX === 'undefined') throw new Error('la librería de Excel no cargó (revisá tu conexión)');
+    const hdr = ['Fecha','Hora','Turno','Tipo','Descripción / qué ha pasado','Cliente / Hab. / Ref.','Registrado por','Estado','Pendiente para siguiente turno / notas'];
+    const wb = XLSX.utils.book_new(); const meses = {};
+    const fila = (iso, e) => [iso.slice(8) + '/' + iso.slice(5, 7) + '/' + iso.slice(0, 4), e.h || '', e.t || '', e.ti || '', e.d || '', e.r || '', e.p || '', e.e || '', e.n || ''];
+    const pend = [];
+    for (const iso of diaAllIsos()){
+      const es = diaRead(iso).filter(e => !e.x); if (!es.length) continue;
+      const mk = iso.slice(0, 7); (meses[mk] = meses[mk] || [hdr]);
+      es.slice().sort((a, b) => String(a.h).localeCompare(String(b.h))).forEach(e => { meses[mk].push(fila(iso, e)); if (e.e === 'Pendiente' || e.e === 'En curso') pend.push(fila(iso, e)); });
+    }
+    const ks = Object.keys(meses).sort();
+    if (!ks.length) { alert('Todavía no hay entradas para exportar.'); return; }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([hdr, ...pend]), 'Pendientes');
+    const MN = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    for (const k of ks){ const ws = XLSX.utils.aoa_to_sheet(meses[k]); ws['!cols'] = [{wch:11},{wch:7},{wch:9},{wch:20},{wch:55},{wch:22},{wch:14},{wch:12},{wch:45}]; XLSX.utils.book_append_sheet(wb, ws, MN[+k.slice(5) - 1] + ' ' + k.slice(0, 4)); }
+    const d = new Date(); XLSX.writeFile(wb, `Diario_Recepcion_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.xlsx`);
+  }catch(e){ alert('No pude exportar: ' + e.message); }
+}
+async function diaAbrir(){
+  if (!diaISO) diaISO = opToday();
+  diaRender();
+  await diaTraerNube(); diaRender();
+}
+
 /* ================= pestañas ================= */
-const tabBtns = { hoy: $('tabBtnHoy'), tareas: $('tabBtnTareas'), cal: $('tabBtnCal'), fondo: $('tabBtnFondo'), hist: $('tabBtnHist'), cierre: $('tabBtnCierre'), mant: $('tabBtnMant'), fondoP: $('tabBtnFondoP'), mantP: $('tabBtnMantP'), calP: $('tabBtnCalP') };
-const panels  = { hoy: $('panelHoy'),  tareas: $('panelTareas'),  cal: $('panelCal'),  fondo: $('panelFondo'),  hist: $('panelHist'), cierre: $('panelCierre'), mant: $('panelMant'), fondoP: $('panelFondoP'), mantP: $('panelMantP'), calP: $('panelCalP') };
+const tabBtns = { hoy: $('tabBtnHoy'), tareas: $('tabBtnTareas'), cal: $('tabBtnCal'), fondo: $('tabBtnFondo'), hist: $('tabBtnHist'), cierre: $('tabBtnCierre'), mant: $('tabBtnMant'), fondoP: $('tabBtnFondoP'), mantP: $('tabBtnMantP'), calP: $('tabBtnCalP'), diario: $('tabBtnDiario') };
+const panels  = { hoy: $('panelHoy'),  tareas: $('panelTareas'),  cal: $('panelCal'),  fondo: $('panelFondo'),  hist: $('panelHist'), cierre: $('panelCierre'), mant: $('panelMant'), fondoP: $('panelFondoP'), mantP: $('panelMantP'), calP: $('panelCalP'), diario: $('panelDiario') };
 function showTab(name){
   for (const k of Object.keys(panels)){
     panels[k].classList.toggle('on', k === name);
@@ -4379,6 +4569,15 @@ tabBtns.mant.addEventListener('click', () => { renderMantParte(); showTab('mant'
 tabBtns.fondoP.addEventListener('click', () => { renderPeriodPanel(['limpieza'], 'fondoPBody'); showTab('fondoP'); });
 tabBtns.mantP.addEventListener('click', () => { renderPeriodPanel(['mantenimiento','comunes'], 'mantPBody'); showTab('mantP'); });
 tabBtns.calP.addEventListener('click', () => { renderPeriodCalendarPanel(); showTab('calP'); });
+tabBtns.diario.addEventListener('click', () => { showTab('diario'); diaAbrir(); });
+$('diaPrev').addEventListener('click', () => { diaISO = toISO(addDays(fromISO(diaISO), -1)); diaRender(); });
+$('diaNext').addEventListener('click', () => { diaISO = toISO(addDays(fromISO(diaISO), 1)); diaRender(); });
+$('diaHoy').addEventListener('click', () => { diaISO = opToday(); diaRender(); });
+$('diaFecha').addEventListener('change', e => { if (e.target.value){ diaISO = e.target.value; diaRender(); } });
+document.querySelectorAll('.dia-vista').forEach(b => b.addEventListener('click', () => { diaVista = b.dataset.v; diaRender(); }));
+$('diaBuscar').addEventListener('input', diaRender);
+$('diaListas').addEventListener('click', diaListasUI);
+$('diaExcel').addEventListener('click', diaExcel);
 
 /* ================= eventos ================= */
 const drop = $('drop');
@@ -4416,7 +4615,7 @@ $('notesCal').addEventListener('input', saveState);
   bootDone = true;
   loadState();
   if (heredarInHouse()){ renderCal(); renderHoy(); }   /* si la app abre parada en un día sin In House propio */
-  seedFondoFechas();
+  seedFondoFechas(); try{ diaPendBadge(); }catch(e){}
   migrateFondoFechasOnce();
   if (sincronizado){
     publishParte();             /* publicamos el parte actual para la app de limpieza */
