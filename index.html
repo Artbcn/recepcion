@@ -1880,14 +1880,15 @@ function renderPeriodPanel(cats, containerId){
   </div>`;
   for (const task of defs){
     const win = periodCurrentWindow(task, today);
-    html += `<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0">
+    html += `<div style="background:${task.inactiva?'#f3f1ea':'#fff'};border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;${task.inactiva?'opacity:.75':''}">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <input class="pe-label" data-id="${esc(task.id)}" data-container="${esc(containerId)}" value="${esc(task.label)}" style="font-weight:700;border:1px solid var(--line);border-radius:8px;padding:6px 8px;flex:1;min-width:160px">
         ${task.scope==='apto' && cats.length>1 ? `<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#eef2f2;color:#5f7070">${task.cat==='comunes'?'zona común':'apto'}</span>` : ''}
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-soft);cursor:pointer;white-space:nowrap"><input type="checkbox" class="pe-inactiva" data-id="${esc(task.id)}"${task.inactiva?' checked':''}> \u23f8 Inactiva</label>
         <button class="p-del-task" data-id="${esc(task.id)}" data-container="${esc(containerId)}" style="border:none;background:transparent;color:#c0392b;cursor:pointer">✕</button>
       </div>
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${periodEditorHtml(task)}
-        <span style="color:var(--ink-soft);font-size:12.5px">${win ? '· vigente hasta ' + fmtShort(win.end) + (task.period && task.period.anio ? ' ' + task.period.anio : '') : ((task.period && task.period.anio && task.period.anio < today.getFullYear()) ? '· ese año ya pasó' : '')}</span>
+        <span style="color:var(--ink-soft);font-size:12.5px">${task.inactiva ? '· \u23f8 inactiva (no se ofrece)' : win ? '· vigente hasta ' + fmtShort(win.end) + (task.period && task.period.anio ? ' ' + task.period.anio : '') : ((task.period && task.period.anio && task.period.anio < today.getFullYear()) ? '· ese año ya pasó' : '')}</span>
       </div>
       <div id="ptrack-${esc(task.id)}" style="margin-top:10px"></div>
     </div>`;
@@ -1928,6 +1929,7 @@ function periodApartmentsWithMovementToday(task){
 }
 function renderPeriodTracker(task){
   const box = document.getElementById('ptrack-' + task.id); if (!box) return;
+  if (task.inactiva){ box.innerHTML = '<div style="font-size:12.5px;color:var(--ink-soft);font-style:italic">\u23f8 Tarea inactiva: tiene su programaci\u00f3n guardada pero no se ofrece ni se cuenta hasta que la actives.</div>'; return; }
   const today = new Date(); const win = periodCurrentWindow(task, today);
   if (task.scope === 'comun'){
     const done = periodIsDone(task, win, '_comun');
@@ -2074,6 +2076,11 @@ function wirePeriodPanel(containerId){
       if (touched){ saveMp(o); try{ renderMantParte(); publishMantParte(); }catch(e){} }
     }
   }, 500); }); });
+  box.querySelectorAll('.pe-inactiva').forEach(cb => cb.addEventListener('change', () => {
+    const defs = periodDefs(); const d = defs.find(x => x.id === cb.dataset.id); if (!d) return;
+    if (cb.checked) d.inactiva = true; else delete d.inactiva;
+    savePeriodDefs(defs); renderPeriodPanel(cats, containerId);
+  }));
   box.querySelectorAll('.pe-veces').forEach(sel => sel.addEventListener('change', () => {
     const defs = periodDefs(); const d = defs.find(x => x.id === sel.dataset.id); if (!d) return;
     if (sel.value === 'manual'){ d.period = { type:'manual' }; }
@@ -3093,7 +3100,7 @@ function pendingCheckoutFondos(ref){
   const day = ref instanceof Date ? new Date(ref.getFullYear(), ref.getMonth(), ref.getDate()) : new Date();
   const out = [];
   for (const task of periodDefs()){
-    if (task.cat !== 'limpieza' || task.scope !== 'apto') continue;
+    if (task.cat !== 'limpieza' || task.scope !== 'apto') continue; if (task.inactiva) continue;
     if (task.period && task.period.type === 'rolling'){
       const mv = task.period.mesesValidos;
       if (mv && mv.length && !mv.includes(day.getMonth() + 1)) continue;
@@ -3413,7 +3420,7 @@ function syncPeriodFromCierre(label, hab, fecha){
 function pendingPeriodTasks(cat, day, target){
   const out = [];
   for (const task of periodDefs()){
-    if (task.cat !== cat || task.scope !== 'apto') continue;
+    if (task.cat !== cat || task.scope !== 'apto') continue; if (task.inactiva) continue;
     const win = periodCurrentWindow(task, day);
     if (win){
       if (day >= win.start && day <= win.end && !periodIsDone(task, win, target)) out.push({ task, win });
