@@ -3423,7 +3423,7 @@ function periodIsDone(task, win, target){
     const next = new Date(marked.getFullYear(), marked.getMonth() + (task.period.months || 1), marked.getDate());
     return new Date() < next;
   }
-  if (!win) return true;   /* manual: cualquier fecha marcada cuenta como hecho, sin vencimiento */
+  if (!win) return fromISO(String(d).slice(0,10)).getFullYear() === new Date().getFullYear();   /* manual: vale como hecho solo durante el año en que se marcó; el 1/1 vuelve a pendiente (la fecha queda en el historial) */
   /* la fecha marcada "cubre" la ocurrencia a la que pertenece (aunque se haya marcado ANTES de que
      esa ocurrencia empiece, ej: hacerla en julio para una tarea de noviembre) y sigue valiendo
      hasta que esa ocurrencia termine; recién ahí vuelve a estar pendiente para la próxima. */
