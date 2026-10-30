@@ -4386,7 +4386,7 @@ const DIA_DEF_LISTAS = {
   tipos: ['Llegada / Check-in','Salida / Check-out','Incidencia','Queja / Reclamación','Llamada','Email','Reserva','Cancelación','Mantenimiento','Limpieza','Paquete / Mensajería','Objeto perdido','Caja / Cobro','Aviso al equipo','Otro'],
   turnos: ['Mañana','Tarde','Noche'],
   estados: ['Pendiente','En curso','Resuelto','Informativo'],
-  personas: ['Persona 1','Persona 2']
+  personas: ['Sheila','Ayelen']
 };
 const DIA_COLOR = { 'Pendiente':'#FDF0D9', 'En curso':'#E6EEFC', 'Resuelto':'#E3F4EA', 'Informativo':'#F1EFE9' };
 let diaISO = null, diaVista = 'dia';
@@ -4433,7 +4433,7 @@ function diaTurnoAhora(){ const h = new Date().getHours(); const t = diaListas()
 function diaAgregar(){
   const L = diaListas(); const arr = diaRead(diaISO); const now = new Date();
   let por = ''; try{ por = localStorage.getItem('diario-por') || ''; }catch(e){}
-  arr.push({ id: diaNuevoId(), h: pad(now.getHours()) + ':' + pad(now.getMinutes()), t: diaTurnoAhora(), ti: '', d: '', r: '', p: por || L.personas[0], e: L.estados[0], n: '', c: Date.now(), u: Date.now() });
+  arr.push({ id: diaNuevoId(), h: pad(now.getHours()) + ':' + pad(now.getMinutes()), t: diaTurnoAhora(), ti: '', d: '', r: '', p: L.personas.includes(por) ? por : L.personas[0], e: L.estados[0], n: '', c: Date.now(), u: Date.now() });
   diaSave(diaISO); diaRender();
   setTimeout(() => { const tx = document.querySelector('#diaBody tr[data-id="' + arr[arr.length - 1].id + '"] textarea.dia-d'); if (tx) tx.focus(); }, 30);
 }
