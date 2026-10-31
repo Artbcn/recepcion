@@ -750,7 +750,7 @@ function sbPush(k, valStr){
     }catch(e){}
   });
 }
-const SB_Q = {}, SB_SEEN_K = {}; let SB_SEEN = '';
+const SB_Q = {}, SB_SEEN_K = {}, SB_BASES_SEEN = {}; let SB_SEEN = '';
 /* si el aviso en tiempo real se cortó (PC dormida, pestaña en segundo plano), lo comprobamos al volver y cada minuto */
 async function sbCheckRemote(){
   if (!sb || !SB_SEEN) return;
@@ -771,13 +771,24 @@ async function sbPushBases(k, valStr){
   try{
     const { data } = await sb.from('limp_kv').select('v').eq('k', k).maybeSingle();
     const fusion = Object.assign({}, (data && data.v) || {});
+    let choque = false;
     for (const [dia, snap] of Object.entries(mio)){
-      if (!fusion[dia] || (snap.savedAt || 0) >= (fusion[dia].savedAt || 0)) fusion[dia] = snap;
+      const rem = fusion[dia];
+      /* si otra persona/pestaña cambió ESE día después de que lo bajamos, no lo pisamos con nuestra copia (que puede ser vieja) */
+      if (rem && (rem.savedAt || 0) > (SB_BASES_SEEN[dia] || 0) && (rem.savedAt || 0) !== (snap.savedAt || 0)
+          && JSON.stringify(rem.tasks || null) !== JSON.stringify(snap.tasks || null)){
+        choque = true;
+        try{ _lsSet('bk-local-base-' + dia + '-' + Date.now(), JSON.stringify(snap)); }catch(e){}
+        continue;
+      }
+      if (!rem || (snap.savedAt || 0) >= (rem.savedAt || 0)) fusion[dia] = snap;
     }
+    if (choque) showSyncBanner('⚠️ Otra persona cargó listados de un día y esta pestaña estaba vieja. NO los pisé. Tocá acá para recargar (tu copia quedó guardada aparte).', true);
     const claves = Object.keys(fusion).sort();
-    while (claves.length > 21) delete fusion[claves.shift()];
+    while (claves.length > 60) delete fusion[claves.shift()];
     const { error } = await sb.from('limp_kv').upsert({ k, v: fusion, src: SB_TAB, updated_at: new Date().toISOString() });
     if (error) return;
+    for (const [dia, snap] of Object.entries(fusion)) SB_BASES_SEEN[dia] = snap.savedAt || 0;
     /* traemos a lo local los días que solo estaban en lo compartido, sin perder lo que se escribió mientras tanto */
     let actual = {}; try{ actual = JSON.parse(localStorage.getItem(k) || '{}'); }catch(e){}
     for (const [dia, snap] of Object.entries(fusion)){
@@ -810,7 +821,19 @@ async function sbHydrate(){
       const { data, error } = await sb.from('limp_kv').select('k,v,updated_at');
       if (error || !data) throw error || new Error('sin datos');
       for (const row of data){
-        try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){}
+        try{
+          if (row.k === 'art-bases' && row.v && typeof row.v === 'object'){
+            /* no tiramos los días que solo existen (o son más nuevos) en este equipo */
+            let loc = {}; try{ loc = deserialize(localStorage.getItem('art-bases') || '{}') || {}; }catch(e){}
+            const rem = deserialize(JSON.stringify(row.v));
+            const fus = Object.assign({}, rem);
+            for (const [d, sn] of Object.entries(loc)) if (!fus[d] || (sn.savedAt || 0) > (fus[d].savedAt || 0)) fus[d] = sn;
+            _lsSet(row.k, serialize(fus));
+            for (const [d, sn] of Object.entries(row.v)) SB_BASES_SEEN[d] = (sn && sn.savedAt) || 0;
+          } else {
+            _lsSet(row.k, JSON.stringify(row.v));
+          }
+        }catch(e){}
         SB_SEEN_K[row.k] = row.updated_at;
         if (Date.parse(row.updated_at) > Date.parse(SB_SEEN || 0)) SB_SEEN = row.updated_at;
       }
@@ -976,7 +999,7 @@ function saveBaseSnapshot(baseISO){
     savedAt: Date.now()
   };
   const keys = Object.keys(store).sort();
-  while (keys.length > 21){ delete store[keys.shift()]; }   /* guardamos hasta 3 semanas, para no crecer sin límite */
+  while (keys.length > 60){ delete store[keys.shift()]; }   /* guardamos hasta 2 meses de días base */
   setBases(store);
 }
 function resetChipUI(id){
