@@ -447,6 +447,7 @@ tr.has-fondo td{background:#FEFBF5}
  <input type="date" id="refDate">
  <span class="base-note">todo el parte —tareas, toallas y limpiezas— sale para el día siguiente</span>
  </div>
+ <button id="btnBaseNube" title="Si los listados de este Día base se ven mal (por ejemplo salen los de mañana), vuelve a bajar de la nube lo que se guardó para este día.">☁ Restaurar este día</button>
  <button id="btnReset" title="Borra los informes cargados y las tareas en pantalla. El historial no se toca.">🗑 Borrar todo</button>
  <button id="btnInstall">⤓ Instalar app</button>
 </header>
@@ -4664,6 +4665,26 @@ $('btnXlsHist').addEventListener('click', exportHistXlsx);
 $('btnReset').addEventListener('click', resetAll);
 $('notesTareas').addEventListener('input', saveState);
 $('notesCal').addEventListener('input', saveState);
+
+/* Restaurar el Día base actual desde la nube (descarta lo que haya en esta pantalla para ese día; guarda copia local antes) */
+$('btnBaseNube').addEventListener('click', async () => {
+  const dia = $('refDate').value;
+  if (!sb){ alert('No hay conexión con la nube configurada.'); return; }
+  try{
+    const { data, error } = await sb.from('limp_kv').select('v').eq('k', 'art-bases').maybeSingle();
+    if (error) throw error;
+    const rem = data && data.v && data.v[dia];
+    if (!rem || !((rem.tasks || []).length || (rem.guests || []).length)){ alert('En la nube no hay listados guardados para el ' + fmtShort(fromISO(dia)) + '.'); return; }
+    if (!confirm('Volver a bajar de la nube los listados del Día base ' + fmtShort(fromISO(dia)) + ' (' + ((rem.tasks||[]).length) + ' tareas)?\n\nLo que ves ahora para ese día se reemplaza (queda una copia local por las dudas).')) return;
+    const loc = getBases();
+    if (loc[dia]) { try{ _lsSet('bk-local-base-' + dia + '-' + Date.now(), serialize(loc[dia])); }catch(e){} }
+    const r = deserialize(JSON.stringify(rem));
+    r.savedAt = Date.now();
+    loc[dia] = r; setBases(loc);
+    sessionStorage.setItem('art-lastbase-tab', dia);
+    location.reload();
+  }catch(e){ alert('No pude bajar de la nube: ' + (e.message || e)); }
+});
 
 /* arranque: recuperar lo de la sesión anterior */
 (async function boot(){
