@@ -1266,7 +1266,7 @@ function parteSnapshot(){
       const ref0 = tareasDate();
       for (let k = 0; k <= 7; k++){
         const day = addDays(ref0, k), f = forecastCounts(day, ref0);
-        prevision.push({ fecha: toISO(day), t: f.t, c: f.c, s: f.d, xt: f.xT, xc: f.xC });
+        prevision.push({ fecha: toISO(day), t: f.t, c: f.c, s: f.d, l: f.a, xt: f.xT, xc: f.xC });
       }
     }
   }catch(e){}
