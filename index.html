@@ -732,8 +732,37 @@ function sbPush(k, valStr){
   if (!sb) return;
   if (k === 'art-bases'){ sbPushBases(k, valStr); return; }
   let v; try{ v = JSON.parse(valStr); }catch(e){ v = valStr; }
-  sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: new Date().toISOString() }).then(()=>{}, ()=>{});
+  /* cola por clave + guardia: si OTRA persona/pestaña cambió esta clave después de que la bajamos, NO la pisamos
+     (antes una pestaña abierta desde ayer borraba lo que la compañera había cargado en otro equipo) */
+  SB_Q[k] = (SB_Q[k] || Promise.resolve()).then(async () => {
+    try{
+      const { data: rem } = await sb.from('limp_kv').select('v,src,updated_at').eq('k', k).maybeSingle();
+      const visto = SB_SEEN_K[k] || SB_SEEN || '';
+      if (rem && rem.src !== SB_TAB && Date.parse(rem.updated_at) > Date.parse(visto || 0) && JSON.stringify(rem.v) !== JSON.stringify(v)){
+        try{ _lsSet('bk-remote-' + k + '-' + Date.now(), JSON.stringify(rem.v)); }catch(e){}
+        try{ _lsSet('bk-local-' + k + '-' + Date.now(), valStr); }catch(e){}
+        showSyncBanner('⚠️ Alguien cargó datos nuevos y esta pestaña estaba vieja. NO los pisé. Tocá acá para recargar (tus últimos cambios de esta pestaña quedaron en copia local).', true);
+        return;
+      }
+      const ts = new Date().toISOString();
+      const { error } = await sb.from('limp_kv').upsert({ k, v, src: SB_TAB, updated_at: ts });
+      if (!error) SB_SEEN_K[k] = ts;
+    }catch(e){}
+  });
 }
+const SB_Q = {}, SB_SEEN_K = {}; let SB_SEEN = '';
+/* si el aviso en tiempo real se cortó (PC dormida, pestaña en segundo plano), lo comprobamos al volver y cada minuto */
+async function sbCheckRemote(){
+  if (!sb || !SB_SEEN) return;
+  try{
+    const { data } = await sb.from('limp_kv').select('k,src,updated_at').gt('updated_at', SB_SEEN).neq('src', SB_TAB).limit(1);
+    if (data && data.length) showSyncBanner();
+  }catch(e){}
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sbCheckRemote(); });
+window.addEventListener('focus', sbCheckRemote);
+window.addEventListener('online', sbCheckRemote);
+setInterval(() => { if (!document.hidden) sbCheckRemote(); }, 60000);
 /* 'art-bases' guarda un juego de listados por cada Día base. Si se subiera el bloque entero, una computadora
    con una copia vieja pisaría los días que la otra ya cargó. Por eso fusionamos día por día: gana siempre la
    versión más nueva (savedAt) de cada fecha, y lo local queda igual a lo compartido. */
@@ -778,10 +807,12 @@ async function sbHydrate(){
   if (!sb) return true;   /* sin Supabase configurado, no hay nada compartido que bajar: seguimos igual que siempre */
   for (let intento = 0; intento < 3; intento++){
     try{
-      const { data, error } = await sb.from('limp_kv').select('k,v');
+      const { data, error } = await sb.from('limp_kv').select('k,v,updated_at');
       if (error || !data) throw error || new Error('sin datos');
       for (const row of data){
         try{ _lsSet(row.k, JSON.stringify(row.v)); }catch(e){}
+        SB_SEEN_K[row.k] = row.updated_at;
+        if (Date.parse(row.updated_at) > Date.parse(SB_SEEN || 0)) SB_SEEN = row.updated_at;
       }
       return true;
     }catch(e){
@@ -836,13 +867,16 @@ function showUndoToast(msg, onUndo){
   document.getElementById('undoToastBtn').onclick = () => { clearTimeout(_undoToastTimer); b.style.display = 'none'; onUndo(); };
   _undoToastTimer = setTimeout(() => { b.style.display = 'none'; }, 7000);
 }
-function showSyncBanner(){
+function showSyncBanner(msg, alerta){
   let b = document.getElementById('sbSyncBanner');
+  if (b && msg){ b.textContent = msg; }
+  if (b && alerta){ b.style.background = '#c0392b'; }
   if (!b){
     b = document.createElement('div');
     b.id = 'sbSyncBanner';
     b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:9999;background:#0FA3A3;color:#fff;padding:12px 16px;text-align:center;font-weight:700;cursor:pointer;box-shadow:0 -2px 10px rgba(0,0,0,.25)';
-    b.textContent = '🔄 Tu compañera actualizó datos — tocá acá para verlos';
+    b.textContent = msg || '🔄 Tu compañera actualizó datos — tocá acá para verlos';
+    if (alerta) b.style.background = '#c0392b';
     b.addEventListener('click', () => location.reload());
     document.body.appendChild(b);
   }
