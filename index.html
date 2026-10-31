@@ -1076,8 +1076,20 @@ $('refDate').addEventListener('change', () => {
 let tareasISO = toISO(addDays(todayLocal, 1));
 let archivedISO = null;   /* bajo qué fecha quedó archivado lo que hay en pantalla */
 function tareasDate(){ return fromISO(tareasISO); }
+/* Fecha real del parte: la del día de las tareas (salida o llegada de cada fila), no la fecha de hoy ni la del Día base.
+   Si no hay tareas, cae en Día base + 1. */
+function parteDate(){
+  const cnt = new Map();
+  for (const t of tasks){
+    const d = (t.tipo === 'salida' ? t.salida : t.llegada) || t.salida || t.llegada;
+    if (d instanceof Date && !isNaN(d)){ const k = toISO(d); cnt.set(k, (cnt.get(k) || 0) + 1); }
+  }
+  let best = null, n = 0;
+  for (const [k, c] of cnt) if (c > n){ best = k; n = c; }
+  return best ? fromISO(best) : tareasDate();
+}
 function paintTareasDate(){
-  const txt = tareasDate().toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'});
+  const txt = parteDate().toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'});
   for (const id of ['tareasDateLbl', 'tareasDateLbl2']) $(id).textContent = txt;
 }
 /* recalcula el informe a partir de la base; devuelve la fecha anterior */
@@ -2902,7 +2914,7 @@ function tareasSheet(list, dateObj, notesText){
   return ws;
 }
 function exportTareasXlsx(){
-  const td = tareasDate();
+  const td = parteDate();
   const ws = tareasSheet(sortTasks(), td, $('notesTareas').value);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Tareas Pisos');
@@ -4013,9 +4025,9 @@ function drawParte(){
   x.fillStyle = '#fff'; x.font = F(800, 27);
   x.fillText('PARTE DE LIMPIEZA · ART APARTMENTS', PADX, 42);
   x.fillStyle = '#93A7B0'; x.font = M(13);
-  x.fillText(`Tareas · toallas · limpiezas del ${fmt(td)}`, PADX, 74);
+  x.fillText(`Tareas · toallas · limpiezas del ${fmt(parteDate())}`, PADX, 74);
   x.font = M(17); x.fillStyle = '#0FA3A3'; x.textAlign = 'right';
-  x.fillText(td.toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'}), W - PADX, 52);
+  x.fillText(parteDate().toLocaleDateString('es-ES', {weekday:'long', day:'2-digit', month:'2-digit', year:'numeric'}), W - PADX, 52);
   x.textAlign = 'left';
 
   let y = 138;
@@ -4279,7 +4291,7 @@ function drawParte(){
   const now = new Date();
   x.fillText(`Generado ${fmtShort(now)} ${pad(now.getHours())}:${pad(now.getMinutes())} · ART Limpieza`, PADX, H - 24);
 
-  const bd = refDate();   /* nombre con el Día base (el día en que se prepara), p.ej. "Tareas pisos 05102026.png" */
+  const bd = parteDate();   /* nombre con la fecha del DÍA DE LAS TAREAS (no la de hoy), p.ej. "Tareas pisos 01112026.png" */
   return { cv, name: `Tareas pisos ${pad(bd.getDate())}${pad(bd.getMonth()+1)}${bd.getFullYear()}.png` };
 }
 
