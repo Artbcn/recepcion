@@ -218,6 +218,9 @@ tr.hl td{background:#FDFBF4}
 .pd-hora{border:1px solid var(--line); border-radius:6px; padding:3px 5px; font-family:inherit; font-size:12px}
 .pd-conf, .pd-copy{border:1px solid var(--line); background:#fff; border-radius:999px; padding:3px 9px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; white-space:nowrap}
 .pd-conf.on{background:#128a4a; color:#fff; border-color:#128a4a}
+.pd-add{border:1px dashed var(--line); background:transparent; border-radius:999px; padding:4px 10px; font-size:11.5px; font-weight:700; cursor:pointer; font-family:inherit; color:#0e7a7a; margin-top:6px}
+.pd-del{border:none; background:transparent; color:#b4442f; font-weight:700; cursor:pointer; font-size:13px}
+.pd-form .extra-form{display:flex; gap:6px; margin-top:6px}
 .pd-copy{background:var(--ink); color:#fff; border-color:var(--ink)}
 .pd-none{font-size:12px; color:var(--ink-soft); font-style:italic}
 .hoy-card{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; min-width:0}
@@ -1155,43 +1158,43 @@ function setFondoAptDone(key, hab, val){
 }
 
 /* limpiezas extra agregadas a mano (reprogramaciones), guardadas por fecha de informe */
-const extraKey = () => 'art-extra-' + tareasISO;
-function extraCleans(){ return lsGet(extraKey(), []); }
-function addExtraClean(hab, huesped, hora){
-  const list = extraCleans();
+const extraKey = (iso) => 'art-extra-' + (iso || tareasISO);
+function extraCleans(iso){ return lsGet(extraKey(iso), []); }
+function addExtraClean(hab, huesped, hora, iso){
+  const list = extraCleans(iso);
   list.push({ hab: String(hab).trim(), huesped: String(huesped || '').trim(), hora, extra: true });
-  lsSet(extraKey(), list);
+  lsSet(extraKey(iso), list);
 }
-function removeExtraClean(idx){
-  const list = extraCleans();
+function removeExtraClean(idx, iso){
+  const list = extraCleans(iso);
   list.splice(idx, 1);
-  lsSet(extraKey(), list);
+  lsSet(extraKey(iso), list);
 }
 
 /* toallas manuales agregadas a mano (como extraCleans pero para toallas) */
-const manualTwKey = () => 'art-mantw-' + tareasISO;
-function manualTowels(){ return lsGet(manualTwKey(), []); }
-function addManualTowel(hab, huesped){
-  const list = manualTowels();
+const manualTwKey = (iso) => 'art-mantw-' + (iso || tareasISO);
+function manualTowels(iso){ return lsGet(manualTwKey(iso), []); }
+function addManualTowel(hab, huesped, iso){
+  const list = manualTowels(iso);
   list.push({ hab: String(hab).trim(), huesped: String(huesped || '').trim() });
-  lsSet(manualTwKey(), list);
+  lsSet(manualTwKey(iso), list);
 }
-function removeManualTowel(idx){
-  const list = manualTowels();
+function removeManualTowel(idx, iso){
+  const list = manualTowels(iso);
   list.splice(idx, 1);
-  lsSet(manualTwKey(), list);
+  lsSet(manualTwKey(iso), list);
 }
 /* limpiezas ocultas (borradas por el usuario); guardadas por fecha de informe */
-const hiddenClKey = () => 'art-hidecl-' + tareasISO;
-function hiddenClients(){ return lsGet(hiddenClKey(), []); }
+const hiddenClKey = (iso) => 'art-hidecl-' + (iso || tareasISO);
+function hiddenClients(iso){ return lsGet(hiddenClKey(iso), []); }
 function hideClient(hab){
   const list = hiddenClients();
   if (!list.includes(hab)){ list.push(hab); lsSet(hiddenClKey(), list); }
 }
 function unhideClient(hab){ lsSet(hiddenClKey(), hiddenClients().filter(h => h !== hab)); }
 /* toallas ocultas */
-const hiddenTwKey = () => 'art-hidetw-' + tareasISO;
-function hiddenTowels(){ return lsGet(hiddenTwKey(), []); }
+const hiddenTwKey = (iso) => 'art-hidetw-' + (iso || tareasISO);
+function hiddenTowels(iso){ return lsGet(hiddenTwKey(iso), []); }
 function hideTowel(hab){
   const list = hiddenTowels();
   if (!list.includes(hab)){ list.push(hab); lsSet(hiddenTwKey(), list); }
@@ -3694,14 +3697,15 @@ function eventsToday(refOverride){
   const ref = refOverride || tareasDate();
   const towels = [], clients = [];
   const removedTowels = [], removedClients = [];
-  const htw = hiddenTowels(), hcl = hiddenClients();
+  const isoR = refOverride ? toISO(refOverride) : undefined;
+  const htw = hiddenTowels(isoR), hcl = hiddenClients(isoR);
   for (const g of guests){
     const s = schedule(g);
     if (towelDates(s).some(d => same(d, ref))){ if (htw.includes(g.hab)) removedTowels.push(g); else towels.push(g); }
     if (clientDates(s).some(d => same(d, ref))){ if (hcl.includes(g.hab)) removedClients.push(g); else clients.push(g); }
   }
   /* toallas manuales y limpiezas extra son propias del parte actual, no se proyectan a otros días */
-  if (!refOverride) manualTowels().forEach((e, idx) => {
+  manualTowels(isoR).forEach((e, idx) => {
     towels.push({ hab: e.hab, huesped: e.huesped, _manual: true, _manualIdx: idx });
   });
   const byHab = (a,b) => a.hab.localeCompare(b.hab, undefined, {numeric:true});
@@ -3709,8 +3713,8 @@ function eventsToday(refOverride){
   // turnos de limpieza: priorizando siempre el más temprano
   const isoOverride = refOverride ? toISO(refOverride) : undefined;
   const cl = clients.map((g, i) => ({ g, hora: slotFor(g.hab, SLOTS[Math.min(i, SLOTS.length-1)], isoOverride) }));
-  if (!refOverride) extraCleans().forEach((e, idx) => {
-    cl.push({ g: { hab: e.hab, huesped: e.huesped }, hora: slotFor('x' + e.hab, e.hora), extra: true, idx });
+  extraCleans(isoR).forEach((e, idx) => {
+    cl.push({ g: { hab: e.hab, huesped: e.huesped }, hora: slotFor('x' + e.hab, e.hora, isoOverride), extra: true, idx });
   });
   cl.sort((a, b) => a.g.hab.localeCompare(b.g.hab, undefined, {numeric:true}));
   return { towels, clients: cl, removedTowels, removedClients };
@@ -3731,32 +3735,39 @@ function renderProximosDias(){
       const done = isConfirmed(g.hab, 't', iso), hora = towelHora(g.hab, iso);
       return `<div class="pd-row${done?' pd-done':''}">
         <span class="pd-hab">${esc(g.hab)}</span>
+        ${g._manual ? '<span class="xtag">Manual</span>' : ''}
         <span class="pd-who">${esc(g.huesped)||'—'}</span>
         <input type="time" class="pd-hora" data-iso="${iso}" data-hab="${esc(g.hab)}" value="${esc(hora)}">
         <button class="pd-conf${done?' on':''}" data-iso="${iso}" data-hab="${esc(g.hab)}" data-tipo="t">${done?'✓ Confirmado':'Confirmar'}</button>
         <button class="pd-copy" data-iso="${iso}" data-hab="${esc(g.hab)}" data-tipo="t">Copiar</button>
+        ${g._manual ? `<button class="pd-del" data-iso="${iso}" data-kind="tw" data-idx="${g._manualIdx}" title="Quitar">✕</button>` : ''}
       </div>`;
     }).join('') : '<div class="pd-none">Sin cambios de toalla</div>';
     const clHtml = clients.length ? clients.map(c => {
-      const done = isConfirmed(c.g.hab, 'c', iso);
+      const cid = c.extra ? 'x' + c.g.hab : c.g.hab;
+      const done = isConfirmed(cid, 'c', iso);
       return `<div class="pd-row${done?' pd-done':''}">
         <span class="pd-hab">${esc(c.g.hab)}</span>
+        ${c.extra ? '<span class="xtag">Extra</span>' : ''}
         <span class="pd-who">${esc(c.g.huesped)||'—'}</span>
-        <select class="pd-hora pd-slot" data-iso="${iso}" data-hab="${esc(c.g.hab)}">${horaOpts(c.hora)}</select>
-        <button class="pd-conf${done?' on':''}" data-iso="${iso}" data-hab="${esc(c.g.hab)}" data-tipo="c">${done?'✓ Confirmado':'Confirmar'}</button>
-        <button class="pd-copy" data-iso="${iso}" data-hab="${esc(c.g.hab)}" data-tipo="c">Copiar</button>
+        <select class="pd-hora pd-slot" data-iso="${iso}" data-hab="${esc(cid)}">${horaOpts(c.hora)}</select>
+        <button class="pd-conf${done?' on':''}" data-iso="${iso}" data-hab="${esc(cid)}" data-tipo="c">${done?'✓ Confirmado':'Confirmar'}</button>
+        <button class="pd-copy" data-iso="${iso}" data-hab="${esc(c.g.hab)}" data-cid="${esc(cid)}" data-tipo="c">Copiar</button>
+        ${c.extra ? `<button class="pd-del" data-iso="${iso}" data-kind="cl" data-idx="${c.idx}" title="Quitar">✕</button>` : ''}
       </div>`;
     }).join('') : '<div class="pd-none">Sin limpiezas de cliente</div>';
     return `<div class="pd-card">
       <div class="pd-day">${esc(txt)}</div>
       <div class="pd-cols">
-        <div><div class="pd-h">Toallas (${towels.length})</div>${twHtml}</div>
-        <div><div class="pd-h">Cliente (${clients.length})</div>${clHtml}</div>
+        <div><div class="pd-h">Toallas (${towels.length})</div>${twHtml}<div class="pd-form" data-iso="${iso}" data-kind="tw"></div><button class="pd-add" data-iso="${iso}" data-kind="tw">+ Toalla</button></div>
+        <div><div class="pd-h">Cliente (${clients.length})</div>${clHtml}<div class="pd-form" data-iso="${iso}" data-kind="cl"></div><button class="pd-add" data-iso="${iso}" data-kind="cl">+ Limpieza de cliente</button></div>
       </div>
     </div>`;
   }).join('');
+  const heredado = (() => { try{ return /^\(heredado/.test(chipName('chip-inh')); }catch(e){ return false; } })();
   box.innerHTML = `<h3 style="margin:0 0 4px">Próximos días</h3>
     <div class="sub" style="margin-bottom:10px">Confirmá y mandale el mensaje al huésped con anticipación — se guarda para cuando llegue ese día.</div>
+    ${heredado ? '<div style="background:#fdf0d9;border:1px solid #eccb8f;color:#8a5a10;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:13px;font-weight:600">⚠️ Estos días se calculan con un In House <b>heredado de un día anterior</b>, no con el de hoy. Cargá el In House actual para que se actualicen (huéspedes nuevos, salidas, cambios).</div>' : ''}
     <div class="pd-grid">${cards}</div>`;
   box.querySelectorAll('.pd-hora:not(.pd-slot)').forEach(inp => inp.addEventListener('change', () => {
     setTowelHora(inp.dataset.hab, inp.value || TOWEL_DEF_HORA, inp.dataset.iso); renderProximosDias(); saveState();
@@ -3767,10 +3778,38 @@ function renderProximosDias(){
   box.querySelectorAll('.pd-conf').forEach(btn => btn.addEventListener('click', () => {
     toggleConf(btn.dataset.hab, btn.dataset.tipo, 'ok', btn.dataset.iso); renderProximosDias(); saveState();
   }));
+  box.querySelectorAll('.pd-del').forEach(btn => btn.addEventListener('click', () => {
+    const idx = Number(btn.dataset.idx);
+    if (btn.dataset.kind === 'tw') removeManualTowel(idx, btn.dataset.iso); else removeExtraClean(idx, btn.dataset.iso);
+    renderProximosDias(); renderCal(); saveState();
+  }));
+  box.querySelectorAll('.pd-add').forEach(btn => btn.addEventListener('click', () => {
+    const iso = btn.dataset.iso, kind = btn.dataset.kind;
+    const f = box.querySelector(`.pd-form[data-iso="${iso}"][data-kind="${kind}"]`);
+    if (!f || f.innerHTML) return;
+    f.innerHTML = `<div class="extra-form" style="flex-wrap:wrap">
+      <input type="text" class="xf-hab" placeholder="Apto" inputmode="numeric" style="width:70px">
+      <input type="text" class="xf-name" placeholder="Nombre (opcional)">
+      ${kind === 'cl' ? '<input type="time" class="xf-hora" value="11:00">' : ''}
+      <button class="xf-ok">Agregar</button><button class="xf-cancel">Cancelar</button></div>`;
+    const submit = () => {
+      const hab = f.querySelector('.xf-hab').value.trim();
+      if (!hab){ f.querySelector('.xf-hab').focus(); return; }
+      const nm = f.querySelector('.xf-name').value;
+      if (kind === 'tw') addManualTowel(hab, nm, iso);
+      else addExtraClean(hab, nm, f.querySelector('.xf-hora').value, iso);
+      renderProximosDias(); renderCal(); saveState();
+    };
+    f.querySelector('.xf-ok').addEventListener('click', submit);
+    f.querySelector('.xf-hab').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    f.querySelector('.xf-name').addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    f.querySelector('.xf-cancel').addEventListener('click', () => { f.innerHTML = ''; });
+    f.querySelector('.xf-hab').focus();
+  }));
   box.querySelectorAll('.pd-copy').forEach(btn => btn.addEventListener('click', (e) => {
     const iso = btn.dataset.iso, hab = btn.dataset.hab, fecha = fromISO(iso);
     const esToalla = btn.dataset.tipo === 't';
-    const hora = esToalla ? towelHora(hab, iso) : slotFor(hab, '11:00', iso);
+    const hora = esToalla ? towelHora(hab, iso) : slotFor(btn.dataset.cid || hab, '11:00', iso);
     const tpl = esToalla ? $('tplTowel').value : $('tplClean').value;
     copyText(fillTpl(tpl, hab, hora, fecha), e.target);
   }));
