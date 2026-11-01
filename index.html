@@ -523,13 +523,13 @@ tr.has-fondo td{background:#FEFBF5}
  </div>
  <div class="hoy-grid">
  <div class="hoy-card tw">
- <h3>Cambio de toallas</h3>
+ <h3>Cambio de toallas <span class="hoy-fecha" style="font-weight:700;color:#0e7a7a;font-size:.85em"></span></h3>
  <div class="sub">Hora editable por apartamento — pensada para la franja <b>11:00–16:00</b>, admite cualquier hora.</div>
  <div id="listTowels"></div>
  <button class="copy-all" id="copyAllTw">Copiar todos los mensajes de toallas</button>
  </div>
  <div class="hoy-card cl">
- <h3>Limpieza de cliente</h3>
+ <h3>Limpieza de cliente <span class="hoy-fecha" style="font-weight:700;color:#C97F17;font-size:.85em"></span></h3>
  <div class="sub">Turnos de <b>10:00 · 11:00 · 12:00 · 13:00</b> — se asignan priorizando el más temprano. Podés cambiarlo en cada fila.</div>
  <div id="listClients"></div>
  <button class="copy-all" id="copyAllCl">Copiar todos los mensajes de limpieza</button>
@@ -1018,7 +1018,10 @@ function heredarInHouse(){
   if (guests.length) return false;
   const base = $('refDate').value;
   const store = getBases();
-  const previos = Object.keys(store).filter(k => k < base && (store[k].guests || []).length).sort();
+  /* la fuente es siempre el In House REALMENTE cargado más reciente (no una copia heredada que quedó guardada en otro día) */
+  const esHeredado = k => /^\(heredado/.test((store[k].chips && store[k].chips.inh) || '');
+  let previos = Object.keys(store).filter(k => k < base && (store[k].guests || []).length && !esHeredado(k)).sort();
+  if (!previos.length) previos = Object.keys(store).filter(k => k < base && (store[k].guests || []).length).sort();
   if (!previos.length) return false;
   const origen = previos[previos.length - 1];
   guests = store[origen].guests;
@@ -1042,9 +1045,12 @@ $('refDate').addEventListener('change', () => {
   }
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
+    const inhHeredado = snap.chips && /^\(heredado/.test(snap.chips.inh || '');
+    if (inhHeredado) guests = [];   /* era una copia heredada: se vuelve a tomar del In House cargado más reciente */
     if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
     ['chip-arr','chip-dep','chip-inh'].forEach((id,i) => {
       const txt = snap.chips && [snap.chips.arr, snap.chips.dep, snap.chips.inh][i];
+      if (id === 'chip-inh' && inhHeredado){ resetChipUI(id); return; }
       if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt); else resetChipUI(id);
     });
   } else {
@@ -2542,6 +2548,7 @@ function loadState(){
   }
   if (snap){
     tasks = snap.tasks || []; guests = snap.guests || [];
+    if (snap.chips && /^\(heredado/.test(snap.chips.inh || '')) guests = [];   /* se recalcula desde el In House más reciente */
     if (snap.notesTareas != null) $('notesTareas').value = snap.notesTareas;
   } else if (st.baseISO && st.baseISO === savedBaseISO){
     /* el bloque general (art-state) es del MISMO día que estamos por mostrar: sirve de respaldo
@@ -2562,6 +2569,7 @@ function loadState(){
   const chipsFuente = snap ? snap.chips : (st.baseISO === savedBaseISO ? st.chips : null);
   ['chip-arr','chip-dep','chip-inh'].forEach((id,i) => {
     const txt = chipsFuente && [chipsFuente.arr, chipsFuente.dep, chipsFuente.inh][i];
+    if (id === 'chip-inh' && /^\(heredado/.test(txt || '')){ resetChipUI(id); return; }
     if (txt && txt !== '—' && txt !== 'pendiente' && txt !== 'opcional') setChip(id, txt); else resetChipUI(id);
   });
   if (tasks.length) renderTareas();
@@ -3821,6 +3829,7 @@ function renderHoy(){
   $('hoyHint').style.display = 'none';
   $('hoyBody').style.display = 'block';
   renderProximosDias();
+  { const t = '· para el ' + tareasDate().toLocaleDateString('es-ES', { weekday:'long', day:'2-digit', month:'2-digit' }); document.querySelectorAll('.hoy-fecha').forEach(e => e.textContent = t); }
   const { towels, clients, removedTowels, removedClients } = eventsToday();
 
   const lt = $('listTowels'); lt.innerHTML = '';
@@ -3917,6 +3926,7 @@ function openExtraForm(){
   const f = document.createElement('div');
   f.className = 'extra-form';
   f.innerHTML = `
+    <span style="font-size:12px;font-weight:700;color:#8a5a10;align-self:center">para el ${esc(tareasDate().toLocaleDateString('es-ES', { weekday:'long', day:'2-digit', month:'2-digit' }))}</span>
     <input type="text" class="xf-hab" placeholder="Apto" inputmode="numeric">
     <input type="text" class="xf-name" placeholder="Nombre (opcional)">
     <input type="time" class="xf-hora" value="11:00">
