@@ -3535,6 +3535,9 @@ function periodIsDone(task, win, target){
   const markedDate = fromISO(d);
   const coveredWin = periodCurrentWindow(task, markedDate);
   if (!coveredWin) return false;
+  /* al empezar un período nuevo todo vuelve a pendiente: solo cuenta como hecho si la fecha cae DENTRO de la ocurrencia actual (la fecha queda guardada en "Última vez") */
+  if (win && win.key && coveredWin.key !== win.key) return false;
+  if (markedDate < coveredWin.start) return false;
   return new Date() <= coveredWin.end;
 }
 function periodSetDone(task, target, dateStr){
