@@ -1637,7 +1637,7 @@ function mpChipsHtml(x, sel){
   /* se ofrecen las preventivas pendientes del apto; al tocar una se agrega al parte (verde) o se saca */
   const all = []; (x.pend || []).forEach(t => { if (!all.includes(t)) all.push(t); }); (sel || []).forEach(t => { if (!all.includes(t)) all.push(t); });
   return all.map(t => { const on = (sel || []).includes(t);
-    return `<button class="mp-gen" data-hab="${esc(x.hab)}" data-task="${esc(t)}" style="border:1px solid ${on ? '#bfe6cd' : '#e4dfd4'};background:${on ? '#e7f5ec' : '#f4f1ea'};color:${on ? '#128a4a' : '#6b655a'};border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600;cursor:pointer">${on ? '\u2713 ' : '+ '}${esc(t)}</button>`; }).join('');
+    return `<button class="mp-gen" data-hab="${esc(x.hab)}" data-task="${esc(t)}" style="border:1px solid ${on ? '#bfe6cd' : '#e4dfd4'};background:${on ? '#e7f5ec' : '#f4f1ea'};color:${on ? '#128a4a' : '#6b655a'};border-radius:999px;padding:3px 9px;margin:2px;font-size:12px;font-weight:600;cursor:pointer">${on ? '\u2713 ' : '+ '}${esc(t)}</button>`; }).join('');
 }
 function mantEstadoHab(hab){
   const t = (tasks || []).find(x => x.hab === hab);
@@ -1647,10 +1647,22 @@ function mantEstadoHab(hab){
   return 'Libre';
 }
 function mpHoraOpts(first){ return `<option value="">${first}</option>` + ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00'].map(h => `<option value="${h}">${h}</option>`).join(''); }
+window._mpOpen = window._mpOpen || new Set();
+(function(){ if (document.getElementById('mpGridCss')) return; const st = document.createElement('style'); st.id = 'mpGridCss'; st.textContent = '.mpGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:0 8px}.mpGrid details[open]{grid-column:1/-1}'; document.head.appendChild(st); })();
+function mpCardCompact(kind, x, label, mp, sel, chips){
+  const key = kind + '|' + x.hab, nTot = new Set([...(x.pend||[]), ...(sel||[])]).size, nSel = (sel||[]).length;
+  const nota = (mp.notas[x.hab] || '');
+  const badge = nTot ? `<span style="margin-left:auto;font-size:11.5px;font-weight:800;border-radius:999px;padding:2px 9px;background:${nSel ? '#e7f5ec' : '#f4f1ea'};color:${nSel ? '#128a4a' : '#8a8478'}">${nSel ? '\u2713 ' + nSel + ' / ' : ''}${nTot} prev.</span>` : '';
+  return `<details class="mpd" data-key="${esc(key)}"${window._mpOpen.has(key) ? ' open' : ''} style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin:4px 0">` +
+    `<summary style="display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:13px"><b style="font-family:'IBM Plex Mono',monospace;font-size:15px">${esc(x.hab)}</b><span style="color:var(--ink-soft)">${label}</span>${nota ? '<span title="tiene nota" style="font-size:12px">\ud83d\udcdd</span>' : ''}${badge}` +
+    `<button class="mp-del" data-kind="${kind}" data-hab="${esc(x.hab)}" style="border:none;background:transparent;color:#c0392b;cursor:pointer;font-size:14px;padding:0 2px">\u2715</button></summary>` +
+    `<div style="display:flex;flex-wrap:wrap;margin-top:4px">${chips || '<span style="color:var(--ink-soft);font-size:12px;font-style:italic;margin:3px">Sin preventivas pendientes.</span>'}</div>` +
+    `<input class="mp-nota" data-hab="${esc(x.hab)}" placeholder="reparaci\u00f3n chica (enchufe, canilla, gotera\u2026) \u2014 opcional" value="${esc(nota)}" style="width:100%;margin-top:6px;border:1px solid var(--line);border-radius:9px;padding:6px 9px;font-family:inherit;font-size:13px"></details>`;
+}
 function renderMantParte(){
   const box = document.getElementById('mantParteBox'); if (!box) return;
   const der = mantDerive(); const mp = mpState(); const hid = new Set(mp.hidden || []);
-  const H = (t) => `<h3 style="margin:16px 0 6px;font-size:14px">${t}</h3>`;
+  const H = (t) => `<h3 style="margin:12px 0 4px;font-size:13.5px">${t}</h3>`;
   const cardWrap = (inner) => `<div style="background:#fff;border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:7px 0">${inner}</div>`;
   const delBtn = (kind,hab) => `<button class="mp-del" data-kind="${kind}" data-hab="${esc(hab)}" style="border:none;background:transparent;color:#c0392b;cursor:pointer;font-size:15px;float:right">\u2715</button>`;
   let html = '<div style="font-size:19px;font-weight:800;margin-bottom:2px">Parte de mantenimiento del d\u00eda</div>';
@@ -1708,53 +1720,35 @@ function renderMantParte(){
   }
 
   html += H(`\ud83d\udd27 Puntual \u2014 ventana salida\u2192llegada <span style="color:var(--ink-soft)">(${punt.length})</span>`);
-  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Toc\u00e1 una tarea preventiva para <b>sumarla al parte</b> (se pone verde \u2713); volv\u00e9 a tocarla para sacarla.</div>';
   html += punt.length ? punt.map(x => {
     const sel = genSel(mp, x);
     const chips = mpChipsHtml(x, sel);
-    return cardWrap(
-      delBtn('puntual', x.hab) +
-      `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12.5px">${esc(x.huesped)}</span>` +
-      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>') +
-      `<input class="mp-nota" data-hab="${esc(x.hab)}" placeholder="reparaci\u00f3n chica (enchufe, canilla, gotera\u2026) \u2014 opcional" value="${esc(mp.notas[x.hab]||'')}" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:inherit;font-size:14px">`
-    );
+    return mpCardCompact('puntual', x, (x.huesped?esc(x.huesped):'ventana'), mp, sel, chips);
   }).join('') : '<div class="none" style="display:block">Sin ventanas de turnover hoy.</div>';
 
   const gen = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabsUI.has(x.hab));
   html += H(`\ud83d\udee0\ufe0f General \u2014 aptos que se vac\u00edan <span style="color:var(--ink-soft)">(${gen.length})</span>`);
-  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Toc\u00e1 una tarea preventiva para <b>sumarla al parte</b> (se pone verde \u2713); volv\u00e9 a tocarla para sacarla.</div>';
   if (!gen.length) html += '<div class="none" style="display:block">No hay aptos vaci\u00e1ndose hoy.</div>';
   else html += gen.map(x => {
     const sel = genSel(mp, x);
     const chips = mpChipsHtml(x, sel);
-    return cardWrap(
-      delBtn('general', x.hab) +
-      `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">vac\u00edo</span>` +
-      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>') +
-      `<input class="mp-nota" data-hab="${esc(x.hab)}" placeholder="reparaci\u00f3n chica (enchufe, canilla, gotera\u2026) \u2014 opcional" value="${esc(mp.notas[x.hab]||'')}" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:inherit;font-size:14px">`
-    );
+    return mpCardCompact('general', x, 'se vac\u00eda', mp, sel, chips);
   }).join('');
 
   const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabsUI.has(x.hab));
   html += H(`\ud83d\udd35 Libres \u2014 sin hu\u00e9sped ni movimiento hoy <span style="color:var(--ink-soft)">(${libre.length})</span>`);
-  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Aptos vac\u00edos todo el d\u00eda, sin apuro de horario \u2014 c\u00f3modos para Diego. Toc\u00e1 una tarea preventiva para <b>sumarla al parte</b> (se pone verde \u2713); volv\u00e9 a tocarla para sacarla.</div>';
   if (!libre.length) html += '<div class="none" style="display:block">No hay aptos libres hoy.</div>';
-  else html += libre.map(x => {
+  else html += '<div class="mpGrid">' + libre.map(x => {
     const sel = genSel(mp, x);
     const chips = mpChipsHtml(x, sel);
-    return cardWrap(
-      delBtn('libre', x.hab) +
-      `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">libre</span>` +
-      (chips ? `<div style="display:flex;flex-wrap:wrap;margin-top:8px">${chips}</div>` : '<div style="margin-top:6px;color:var(--ink-soft);font-size:12.5px;font-style:italic">Sin tareas preventivas asignadas todav\u00eda.</div>') +
-      `<input class="mp-nota" data-hab="${esc(x.hab)}" placeholder="reparaci\u00f3n chica (enchufe, canilla, gotera\u2026) \u2014 opcional" value="${esc(mp.notas[x.hab]||'')}" style="width:100%;margin-top:8px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;font-family:inherit;font-size:14px">`
-    );
-  }).join('');
+    return mpCardCompact('libre', x, 'libre', mp, sel, chips);
+  }).join('') + '</div>';
 
   const extras = mp.extras || [];
   const ocupados = der.ocupado || [];
   const habsAll = ALL_HABS.slice();
   html += H(`\ud83d\udccc Tareas puntuales e incidencias \u2014 cualquier apartamento, con horario`);
-  html += `<div class="hint" style="text-align:left;margin-bottom:8px">Para avisarle a Diego de algo puntual (ocupado o libre): elegí el apto, escribí qu\u00e9 hay que hacer y en qu\u00e9 horario. Entre par\u00e9ntesis ves el estado del apto hoy.</div>`;
+  html += `<div class="hint" style="text-align:left;margin-bottom:8px">Apto (con su estado de hoy), qu\u00e9 hacer y horario.</div>`;
   html += `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0">` +
     `<select id="mpxHab" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
     habsAll.map(h => { const g = (guests||[]).find(x => x.hab === h); return `<option value="${esc(h)}">${esc(h)} \u2014 ${esc(mantEstadoHab(h))}${g && g.huesped ? ' \u00b7 ' + esc(g.huesped) : ''}</option>`; }).join('') +
@@ -1796,6 +1790,7 @@ function renderMantParte(){
   }
 
   box.innerHTML = html;
+  box.querySelectorAll('details.mpd').forEach(d => d.addEventListener('toggle', () => { if (d.open) window._mpOpen.add(d.dataset.key); else window._mpOpen.delete(d.dataset.key); }));
 
   const rep = () => { renderMantParte(); publishMantParte(); };
   box.querySelectorAll('.mp-nota').forEach(inp => { let t=null; inp.addEventListener('input', () => { clearTimeout(t); t=setTimeout(()=>{ const o=mpState(); o.notas[inp.dataset.hab]=inp.value; saveMp(o); publishMantParte(); },500); }); });
@@ -1808,7 +1803,7 @@ function renderMantParte(){
     if (i>=0) arr.splice(i,1); else arr.push(task);
     saveMp(o); rep();
   }));
-  box.querySelectorAll('.mp-del').forEach(btn => btn.addEventListener('click', () => {
+  box.querySelectorAll('.mp-del').forEach(btn => btn.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation();
     const o=mpState(); o.hidden=o.hidden||[]; o.hidden.push(btn.dataset.kind+'|'+btn.dataset.hab); saveMp(o); rep();
   }));
   box.querySelectorAll('.mp-restore').forEach(btn => btn.addEventListener('click', () => {
