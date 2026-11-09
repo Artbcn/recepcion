@@ -1633,6 +1633,20 @@ function publishMantParte(force){
 }
 
 /* ================= PARTE DIARIO DE MANTENIMIENTO ================= */
+function mpChipsHtml(x, sel){
+  /* se ofrecen las preventivas pendientes del apto; al tocar una se agrega al parte (verde) o se saca */
+  const all = []; (x.pend || []).forEach(t => { if (!all.includes(t)) all.push(t); }); (sel || []).forEach(t => { if (!all.includes(t)) all.push(t); });
+  return all.map(t => { const on = (sel || []).includes(t);
+    return `<button class="mp-gen" data-hab="${esc(x.hab)}" data-task="${esc(t)}" style="border:1px solid ${on ? '#bfe6cd' : '#e4dfd4'};background:${on ? '#e7f5ec' : '#f4f1ea'};color:${on ? '#128a4a' : '#6b655a'};border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600;cursor:pointer">${on ? '\u2713 ' : '+ '}${esc(t)}</button>`; }).join('');
+}
+function mantEstadoHab(hab){
+  const t = (tasks || []).find(x => x.hab === hab);
+  if (t && t.tipo === 'llegada' && t.esSalida) return 'Ventana salida\u2192llegada';
+  if (t && t.tipo === 'salida') return 'Se vac\u00eda';
+  if ((guests || []).some(g => g.hab === hab)) return 'Ocupado';
+  return 'Libre';
+}
+function mpHoraOpts(first){ return `<option value="">${first}</option>` + ['08:00','09:00','10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00'].map(h => `<option value="${h}">${h}</option>`).join(''); }
 function renderMantParte(){
   const box = document.getElementById('mantParteBox'); if (!box) return;
   const der = mantDerive(); const mp = mpState(); const hid = new Set(mp.hidden || []);
@@ -1694,10 +1708,10 @@ function renderMantParte(){
   }
 
   html += H(`\ud83d\udd27 Puntual \u2014 ventana salida\u2192llegada <span style="color:var(--ink-soft)">(${punt.length})</span>`);
-  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Las tareas preventivas se agregan desde <b>Peri\u00f3dicas \u2192 Mant. preventivo</b>. Ac\u00e1 solo se muestran, ya elegidas.</div>';
+  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Toc\u00e1 una tarea preventiva para <b>sumarla al parte</b> (se pone verde \u2713); volv\u00e9 a tocarla para sacarla.</div>';
   html += punt.length ? punt.map(x => {
     const sel = genSel(mp, x);
-    const chips = sel.map(t => `<span style="display:inline-block;border:1px solid #bfe6cd;background:#e7f5ec;color:#128a4a;border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600">\u2713 ${esc(t)}</span>`).join('');
+    const chips = mpChipsHtml(x, sel);
     return cardWrap(
       delBtn('puntual', x.hab) +
       `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12.5px">${esc(x.huesped)}</span>` +
@@ -1708,11 +1722,11 @@ function renderMantParte(){
 
   const gen = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabsUI.has(x.hab));
   html += H(`\ud83d\udee0\ufe0f General \u2014 aptos que se vac\u00edan <span style="color:var(--ink-soft)">(${gen.length})</span>`);
-  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Las tareas preventivas se agregan desde <b>Peri\u00f3dicas \u2192 Mant. preventivo</b>. Ac\u00e1 solo se muestran, ya elegidas.</div>';
+  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Toc\u00e1 una tarea preventiva para <b>sumarla al parte</b> (se pone verde \u2713); volv\u00e9 a tocarla para sacarla.</div>';
   if (!gen.length) html += '<div class="none" style="display:block">No hay aptos vaci\u00e1ndose hoy.</div>';
   else html += gen.map(x => {
     const sel = genSel(mp, x);
-    const chips = sel.map(t => `<span style="display:inline-block;border:1px solid #bfe6cd;background:#e7f5ec;color:#128a4a;border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600">\u2713 ${esc(t)}</span>`).join('');
+    const chips = mpChipsHtml(x, sel);
     return cardWrap(
       delBtn('general', x.hab) +
       `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">vac\u00edo</span>` +
@@ -1723,11 +1737,11 @@ function renderMantParte(){
 
   const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabsUI.has(x.hab));
   html += H(`\ud83d\udd35 Libres \u2014 sin hu\u00e9sped ni movimiento hoy <span style="color:var(--ink-soft)">(${libre.length})</span>`);
-  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Aptos vac\u00edos todo el d\u00eda, sin apuro de horario \u2014 c\u00f3modos para Diego. Las tareas preventivas se agregan desde <b>Peri\u00f3dicas \u2192 Mant. preventivo</b>.</div>';
+  html += '<div class="hint" style="text-align:left;margin-bottom:8px">Aptos vac\u00edos todo el d\u00eda, sin apuro de horario \u2014 c\u00f3modos para Diego. Toc\u00e1 una tarea preventiva para <b>sumarla al parte</b> (se pone verde \u2713); volv\u00e9 a tocarla para sacarla.</div>';
   if (!libre.length) html += '<div class="none" style="display:block">No hay aptos libres hoy.</div>';
   else html += libre.map(x => {
     const sel = genSel(mp, x);
-    const chips = sel.map(t => `<span style="display:inline-block;border:1px solid #bfe6cd;background:#e7f5ec;color:#128a4a;border-radius:999px;padding:5px 11px;margin:3px;font-size:12.5px;font-weight:600">\u2713 ${esc(t)}</span>`).join('');
+    const chips = mpChipsHtml(x, sel);
     return cardWrap(
       delBtn('libre', x.hab) +
       `<b style="font-family:'IBM Plex Mono',monospace;font-size:16px">${esc(x.hab)}</b> <span style="color:var(--ink-soft);font-size:12px">libre</span>` +
@@ -1738,19 +1752,17 @@ function renderMantParte(){
 
   const extras = mp.extras || [];
   const ocupados = der.ocupado || [];
-  html += H(`\ud83c\udfe0 Incidencias \u2014 solo apartamentos ocupados <span style="color:var(--ink-soft)">(${ocupados.length})</span>`);
-  html += `<div class="hint" style="text-align:left;margin-bottom:8px">Es para avisarle a Diego de algo puntual en un apto donde hay hu\u00e9sped y no puede entrar a trabajar tranquilo. Para el resto de las tareas (apartamentos en ventana o libres), carg\u00e1las directo en la tarjeta de ese apto, en el campo "reparaci\u00f3n chica".</div>`;
-  if (!ocupados.length){
-    html += `<div class="none" style="display:block">No hay apartamentos ocupados hoy.</div>`;
-  } else {
-    html += `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0">` +
-      `<select id="mpxHab" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
-      ocupados.map(o => `<option value="${esc(o.hab)}">${esc(o.hab)}${o.huesped ? ' \u2014 ' + esc(o.huesped) : ''}</option>`).join('') +
-      `</select>` +
-      `<input id="mpxDesc" placeholder="comentario (agua, luz, cama rota\u2026)" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
-      `<select id="mpxHora" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit"><option value="">\u2014 hora \u2014</option>${MANT_HORAS.map(h=>`<option value="${h}">${h}</option>`).join('')}</select>` +
-      `<button id="mpxAdd" class="btn">Agregar</button></div>`;
-  }
+  const habsAll = ALL_HABS.slice();
+  html += H(`\ud83d\udccc Tareas puntuales e incidencias \u2014 cualquier apartamento, con horario`);
+  html += `<div class="hint" style="text-align:left;margin-bottom:8px">Para avisarle a Diego de algo puntual (ocupado o libre): elegí el apto, escribí qu\u00e9 hay que hacer y en qu\u00e9 horario. Entre par\u00e9ntesis ves el estado del apto hoy.</div>`;
+  html += `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0">` +
+    `<select id="mpxHab" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
+    habsAll.map(h => { const g = (guests||[]).find(x => x.hab === h); return `<option value="${esc(h)}">${esc(h)} \u2014 ${esc(mantEstadoHab(h))}${g && g.huesped ? ' \u00b7 ' + esc(g.huesped) : ''}</option>`; }).join('') +
+    `</select>` +
+    `<input id="mpxDesc" placeholder="qu\u00e9 hay que hacer (agua, luz, cama rota\u2026)" style="flex:1;min-width:160px;border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">` +
+    `<select id="mpxHora" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">${mpHoraOpts('\u2014 desde \u2014')}</select>` +
+    `<select id="mpxHoraFin" style="border:1px solid var(--line);border-radius:9px;padding:8px;font-family:inherit">${mpHoraOpts('\u2014 hasta \u2014')}</select>` +
+    `<button id="mpxAdd" class="btn">Agregar</button></div>`;
   if (extras.length) html += extras.map(e => {
     const c = countIncidencia(e.hab, e.desc);
     const badge = (c.porApto > 1 || c.total > 1)
@@ -1791,7 +1803,7 @@ function renderMantParte(){
   if (instrInp){ let t=null; instrInp.addEventListener('input', () => { clearTimeout(t); t=setTimeout(()=>{ const o=mpState(); o.instrucciones=instrInp.value; saveMp(o); publishMantParte(); },500); }); }
   box.querySelectorAll('.mp-gen').forEach(btn => btn.addEventListener('click', () => {
     const o=mpState(); const hab=btn.dataset.hab, task=btn.dataset.task;
-    if (o.general[hab] === undefined){ const d = mantDerive().general.find(g => g.hab === hab); o.general[hab] = d ? d.pend.slice() : []; }
+    if (o.general[hab] === undefined){ const d = mantDerive().general.find(g => g.hab === hab); o.general[hab] = []; }
     const arr = o.general[hab]; const i = arr.indexOf(task);
     if (i>=0) arr.splice(i,1); else arr.push(task);
     saveMp(o); rep();
@@ -1815,7 +1827,9 @@ function renderMantParte(){
     const hab=(document.getElementById('mpxHab').value||'').trim(); if(!hab){document.getElementById('mpxHab').focus();return;}
     const desc = (document.getElementById('mpxDesc').value||'').trim();
     const o=mpState(); o.extras=o.extras||[];
-    o.extras.push({ id:'mx'+Date.now().toString(36), hab, tipo:'incidencia', desc, hora:document.getElementById('mpxHora').value });
+    const h1 = document.getElementById('mpxHora').value, h2 = document.getElementById('mpxHoraFin').value;
+    const horaTxt = h1 && h2 ? h1 + '\u2013' + h2 : (h1 || (h2 ? 'hasta ' + h2 : ''));
+    o.extras.push({ id:'mx'+Date.now().toString(36), hab, tipo:'incidencia', desc, hora:horaTxt, estado: mantEstadoHab(hab) });
     saveMp(o);
     logIncidencia(hab, desc);
     rep();
