@@ -1294,11 +1294,24 @@ function parteSnapshot(){
       }
     }
   }catch(e){}
+  let libres = [];
+  try{
+    if (guests.length){
+      libres = aptosLibresHoy();
+      const pf2 = pendingCheckoutFondos(tareasDate());
+      for (const h of libres){
+        const acciones = pf2.filter(({task, occ}) => !isFondoAptDoneUni(task, occ, h) && isFondoSelected(task.id, h))
+          .map(({task, occ}) => ({ key: occ.key, label: (task.checkoutLabel || task.label) }));
+        if (acciones.length) fondos.push({ hab: h, huesped: '', libre: true, acciones });
+      }
+    }
+  }catch(e){}
   return {
     fecha: tareasISO,
     generatedAt: Date.now(),
     prevision,
     fondos,
+    libres,
     notas: $('notesTareas').value,
     pisos: list.map(t => ({
       hab: t.hab, tipo: t.tipo, tipoLbl: (TIPO_LBL[t.tipo] || t.tipo), obs: t.obs,
@@ -2049,6 +2062,12 @@ function renderPeriodPanel(cats, containerId){
 /* apartamentos con movimiento HOY (ventana o se vacía) relevantes para esta tarea, sin importar si ya está resuelta */
 const ALL_HABS = ["101","102","103","104","105","106","107","201","202","203","204","205","206","207",
                    "301","302","303","304","305","306","307","401","402","403","404","405","406","407"];
+/* aptos sin huésped ni movimiento hoy (libres todo el día) */
+function aptosLibresHoy(){
+  const mov = new Set(); for (const t of tasks) mov.add(t.hab);
+  const occ = new Set([...mov, ...guests.map(g => g.hab)]);
+  return ALL_HABS.filter(h => !occ.has(h)).sort(cmpHab);
+}
 function periodApartmentsWithMovementToday(task){
   if (task.scope !== 'apto') return [];
   const map = new Map();   /* hab -> 'ventana' | 'vacio' | 'libre' */
@@ -2069,6 +2088,7 @@ function periodApartmentsWithMovementToday(task){
     const enVentana = pf.some(({task:t2}) => t2.id === task.id);
     if (enVentana){
       for (const t of tasks) if (isCheckoutTask(t)) map.set(t.hab, (t.tipo === 'llegada' && t.esSalida) ? 'ventana' : 'vacio');
+      for (const h of aptosLibresHoy()) if (!map.has(h)) map.set(h, 'libre');   /* los libres también se pueden asignar */
     }
   }
   return [...map.entries()].map(([hab, tipo]) => ({ hab, tipo })).sort((a,b) => cmpHab(a.hab, b.hab));
