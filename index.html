@@ -872,6 +872,7 @@ function sbSubscribe(){
   try{
     sb.channel('mant_cierre_ch')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'mant_cierre' }, () => {
+        clearTimeout(window._mantSyncT); window._mantSyncT = setTimeout(syncMantDesdeDiego, 1500);
         const p = document.getElementById('panelCierre');
         if (p && p.classList.contains('on')) renderCierre();
       })
@@ -1460,7 +1461,7 @@ async function renderCierre(){
           totN++;
           const c = mmap[g.kind + '|' + it.base + '\u00a7' + t];
           const done = !!(c && c.hecho); if (done) doneN++;
-          if (done && (g.kind === 'mp_puntual' || g.kind === 'mp_general')) syncPeriodFromCierre(t, it.apto, fecha);
+          if (done && (g.kind === 'mp_puntual' || g.kind === 'mp_general' || g.kind === 'mp_libre')) syncPeriodFromCierre(t, it.apto, fecha);
           html += rowHtml(it.apto, done, t + (it.ctx ? ' \u00b7 ' + it.ctx : ''), '');
         }
         const note = mmap['mp_note|' + it.base];
@@ -1621,13 +1622,13 @@ function mantParteSnapshot(){
   const der = mantDerive(); const mp = mpState(); const hid = new Set(mp.hidden || []);
   const manHabs = new Set(Object.keys((mp.manual && mp.manual.porApto) || {}));
   const puntual = der.puntual.filter(x => !hid.has('puntual|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, huesped:x.huesped, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x) }))
+    .map(x => ({ hab:x.hab, huesped:x.huesped, nota:(mp.notas[x.hab] || ''), tareas:mantDedupLabels(genSel(mp, x)), tareaIds:mantDedupLabels(genSel(mp, x)).map(l => mantTaskIdFor(l) || '') }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const general = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x) }))
+    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:mantDedupLabels(genSel(mp, x)), tareaIds:mantDedupLabels(genSel(mp, x)).map(l => mantTaskIdFor(l) || '') }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x) }))
+    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:mantDedupLabels(genSel(mp, x)), tareaIds:mantDedupLabels(genSel(mp, x)).map(l => mantTaskIdFor(l) || '') }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const extras = (mp.extras || []).slice();
   const man = mp.manual || { shared:[], porApto:{} };
@@ -1648,9 +1649,11 @@ function publishMantParte(force){
 /* ================= PARTE DIARIO DE MANTENIMIENTO ================= */
 function mpChipsHtml(x, sel){
   /* se ofrecen las preventivas pendientes del apto; al tocar una se agrega al parte (verde) o se saca */
-  const all = []; (x.pend || []).forEach(t => { if (!all.includes(t)) all.push(t); }); (sel || []).forEach(t => { if (!all.includes(t)) all.push(t); });
-  return all.map(t => { const on = (sel || []).includes(t);
-    return `<button class="mp-gen" data-hab="${esc(x.hab)}" data-task="${esc(t)}" style="border:1px solid ${on ? '#bfe6cd' : '#e4dfd4'};background:${on ? '#e7f5ec' : '#f4f1ea'};color:${on ? '#128a4a' : '#6b655a'};border-radius:999px;padding:3px 9px;margin:2px;font-size:12px;font-weight:600;cursor:pointer">${on ? '\u2713 ' : '+ '}${esc(t)}</button>`; }).join('');
+  const all = []; const selD = mantDedupLabels(sel); (x.pend || []).forEach(t => { const yaSel = selD.find(s2 => mantSameTask(s2, t)); const u = yaSel || t; if (!all.some(a => mantSameTask(a, u))) all.push(u); }); selD.forEach(t => { if (!all.some(a => mantSameTask(a, t))) all.push(t); });
+  return all.map(t => { const on = (sel || []).some(s2 => mantSameTask(s2, t));
+    const pf = on ? '' : mantPendTag(mantTaskIdFor(t), x.hab);   /* asignada otro día y Diego no la hizo */
+    const bd = on ? '#bfe6cd' : (pf ? '#eccb8f' : '#e4dfd4'), bg = on ? '#e7f5ec' : (pf ? '#fdf0d9' : '#f4f1ea'), co = on ? '#128a4a' : (pf ? '#8a5a10' : '#6b655a');
+    return `<button class="mp-gen" data-hab="${esc(x.hab)}" data-task="${esc(t)}" style="border:1px solid ${bd};background:${bg};color:${co};border-radius:999px;padding:3px 9px;margin:2px;font-size:12px;font-weight:600;cursor:pointer">${on ? '\u2713 ' : '+ '}${esc(t)}${pf ? ' \u00b7 pendiente del ' + pf : ''}</button>`; }).join('');
 }
 function mantEstadoHab(hab){
   const t = (tasks || []).find(x => x.hab === hab);
@@ -1790,7 +1793,9 @@ function renderMantParte(){
     .filter(h => der.general.some(x => x.hab === h));
   const hiddenPuntHabs = (mp.hidden||[]).filter(k => k.startsWith('puntual|')).map(k => k.slice(8))
     .filter(h => der.puntual.some(x => x.hab === h));
-  const hiddenList = [...hiddenPuntHabs.map(h=>({kind:'puntual',hab:h})), ...hiddenGenHabs.map(h=>({kind:'general',hab:h}))];
+  const hiddenLibHabs = (mp.hidden||[]).filter(k => k.startsWith('libre|')).map(k => k.slice(6))
+    .filter(h => (der.libre||[]).some(x => x.hab === h));
+  const hiddenList = [...hiddenPuntHabs.map(h=>({kind:'puntual',hab:h})), ...hiddenGenHabs.map(h=>({kind:'general',hab:h})), ...hiddenLibHabs.map(h=>({kind:'libre',hab:h}))];
   if (hiddenList.length){
     html += H(`\ud83d\ude48 Sacados del parte con la \u2715, con movimiento hoy <span style="color:var(--ink-soft)">(${hiddenList.length})</span>`);
     html += cardWrap(
@@ -1812,8 +1817,8 @@ function renderMantParte(){
   box.querySelectorAll('.mp-gen').forEach(btn => btn.addEventListener('click', () => {
     const o=mpState(); const hab=btn.dataset.hab, task=btn.dataset.task;
     if (o.general[hab] === undefined){ const d = mantDerive().general.find(g => g.hab === hab); o.general[hab] = []; }
-    const arr = o.general[hab]; const i = arr.indexOf(task);
-    if (i>=0) arr.splice(i,1); else arr.push(task);
+    const arr = o.general[hab];
+    if (arr.some(t => mantSameTask(t, task))) o.general[hab] = arr.filter(t => !mantSameTask(t, task)); else arr.push(task);
     saveMp(o); rep();
   }));
   box.querySelectorAll('.mp-del').forEach(btn => btn.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation();
@@ -1990,17 +1995,23 @@ function periodEditorHtml(task){
 }
 /* renderiza una pestaña de tareas periódicas (limpieza o mantenimiento+comunes) en su propio contenedor */
 /* ===== "Última vez por apartamento" dentro de cada tarea (para llevar el control de fechas) ===== */
+/* acá (donde se asigna) solo se ven las fechas del período actual: al arrancar un mes/período nuevo
+   las fechas viejas dejan de verse acá, pero quedan guardadas y se ven en el historial del Calendario */
+function ultimaVezVigente(task, apt){
+  const d = (periodEstado()[task.id] || {})[apt] || '';
+  if (!d || !ctlIsISO(String(d).slice(0,10))) return '';
+  return periodIsDone(task, periodCurrentWindow(task, new Date()), apt) ? d : '';
+}
 function ultimaVezHtml(task){
   const est = periodEstado()[task.id] || {};
-  const cnt = Object.keys(est).filter(k => est[k]).length;
   const row = apt => {
-    const d = est[apt] || '';
+    const d = ultimaVezVigente(task, apt);
     return `<div style="display:inline-flex;align-items:center;gap:4px;margin:3px 10px 3px 0;white-space:nowrap"><b style="font-family:'IBM Plex Mono',monospace;font-size:12px;width:32px">${esc(apt)}</b>`
       + `<input type="text" class="uv-txt" data-id="${esc(task.id)}" data-apt="${esc(apt)}" value="${esc(ctlShow(d))}" placeholder="dd/mm/aaaa" style="width:100px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12px;padding:3px 4px;text-align:center;${d?(ctlIsISO(d)?'color:#128a4a;font-weight:700':'color:#2c5db0;font-weight:700'):''}">`
       + `<input type="date" class="uv-pick" data-id="${esc(task.id)}" data-apt="${esc(apt)}" value="${ctlIsISO(d)?esc(d):''}" tabindex="-1" title="Elegir del calendario" style="width:22px;border:0;background:transparent;padding:0;cursor:pointer;opacity:.7"></div>`;
   };
   const apts = [...new Set([...ALL_HABS, ...Object.keys(est)])].sort((a,b) => String(a).localeCompare(String(b), undefined, {numeric:true}));
-  return `<div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px">Escrib\u00ed la \u00faltima fecha en que se hizo (dd/mm/aaaa) o eleg\u00ed del calendario \u{1F4C5}. Vac\u00edo = sin dato.</div>` + apts.map(row).join('');
+  return `<div style="font-size:12px;color:var(--ink-soft);margin:2px 0 6px">Escrib\u00ed la fecha en que se hizo (dd/mm/aaaa) o eleg\u00ed del calendario \u{1F4C5}. Ac\u00e1 solo se ven las de este per\u00edodo; las de meses anteriores quedan en el historial del Calendario.</div>` + apts.map(row).join('');
 }
 function wireUltimaVez(det, onChange){
   const save = (id, apt, raw, txt, pick) => {
@@ -2009,15 +2020,16 @@ function wireUltimaVez(det, onChange){
     savePeriodEstado(e);
     txt.value = ctlShow(v); pick.value = ctlIsISO(v) ? v : '';
     txt.style.color = !v ? '' : (ctlIsISO(v) ? '#128a4a' : '#2c5db0'); txt.style.fontWeight = v ? '700' : '400';
-    const sum = det.querySelector('summary .uv-n'); if (sum){ const pe = periodEstado()[id] || {}; sum.textContent = Object.keys(pe).filter(k => pe[k]).length; }
+    const sum = det.querySelector('summary .uv-n'); if (sum){ const tk = periodDefs().find(t => t.id === id); sum.textContent = tk ? ultimaVezCount(tk) : 0; }
     if (onChange) onChange();
   };
   det.querySelectorAll('.uv-txt').forEach(t => t.addEventListener('change', () => save(t.dataset.id, t.dataset.apt, t.value, t, t.parentNode.querySelector('.uv-pick'))));
   det.querySelectorAll('.uv-pick').forEach(p => p.addEventListener('change', () => save(p.dataset.id, p.dataset.apt, p.value, p.parentNode.querySelector('.uv-txt'), p)));
 }
+function ultimaVezCount(task){ return Object.keys(periodEstado()[task.id] || {}).filter(a => ultimaVezVigente(task, a)).length; }
 function ultimaVezDetails(task){
-  const n = Object.keys(periodEstado()[task.id] || {}).filter(k => periodEstado()[task.id][k]).length;
-  return `<details class="p-ultima" data-id="${esc(task.id)}" style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--ink-soft)">\u{1F4C5} \u00daltima vez por apartamento (<span class="uv-n">${n}</span> cargados)</summary><div class="uv-body" style="padding-top:6px"></div></details>`;
+  const n = ultimaVezCount(task);
+  return `<details class="p-ultima" data-id="${esc(task.id)}" style="margin-top:8px"><summary style="cursor:pointer;font-size:13px;font-weight:700;color:var(--ink-soft)">\u{1F4C5} Hechas este per\u00edodo por apartamento (<span class="uv-n">${n}</span>)</summary><div class="uv-body" style="padding-top:6px"></div></details>`;
 }
 function renderPeriodPanel(cats, containerId){
   const box = document.getElementById(containerId); if (!box) return;
@@ -2131,7 +2143,7 @@ function renderPeriodTracker(task){
     : tipo === 'libre'
     ? '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#e6eefc;color:#2c5db0;margin-left:4px">LIBRE</span>'
     : '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#e3f4ea;color:#1E8C4E;margin-left:4px">VAC\u00cdO</span>';
-  const isSelectedMant = (a) => { const o = mpState(); return !!(o.general && o.general[a] && o.general[a].includes(task.label)); };
+  const isSelectedMant = (a) => { const o = mpState(); return !!(o.general && o.general[a] && o.general[a].some(t => mantSameTask(t, task.label))); };
   const isSelected = (a) => task.cat === 'limpieza' ? isFondoSelected(task.id, a) : isSelectedMant(a);
   const chips = targets.map(({hab:a, tipo}) => {
     const done = periodIsDone(task, win, a);   /* esto ya solo se activa cuando Diego/ella lo marcaron hecho de verdad */
@@ -2140,7 +2152,7 @@ function renderPeriodTracker(task){
     if (isSelected(a)){
       return `<button class="p-apto-chip p-apto-remove" data-id="${esc(task.id)}" data-target="${esc(a)}" style="border:1px solid #bfe6cd;background:#e7f5ec;color:#128a4a;border-radius:10px;padding:7px 12px;margin:3px;font-size:13px;font-weight:700;cursor:pointer">\u2713 ${esc(a)}${tipoTag(tipo)} \u00b7 en el parte (toc\u00e1 para sacar)</button>`;
     }
-    return `<button class="p-apto-chip" data-id="${esc(task.id)}" data-target="${esc(a)}" style="border:1px solid #e4dfd4;background:#f4f1ea;color:#8a7f66;border-radius:10px;padding:7px 12px;margin:3px;font-size:13px;font-weight:700;cursor:pointer">${esc(a)}${tipoTag(tipo)} \u00b7 poner en el parte</button>`;
+    return `<button class="p-apto-chip" data-id="${esc(task.id)}" data-target="${esc(a)}" style="border:1px solid #e4dfd4;background:#f4f1ea;color:#8a7f66;border-radius:10px;padding:7px 12px;margin:3px;font-size:13px;font-weight:700;cursor:pointer">${esc(a)}${tipoTag(tipo)} \u00b7 poner en el parte${mantPendTag(task.cat === 'mantenimiento' ? task.id : null, a) ? ' <span style="color:#8a5a10">\u00b7 pendiente del ' + mantPendTag(task.id, a) + '</span>' : ''}</button>`;
   }).join('');
   const pendN = targets.length - targets.filter(({hab:a}) => periodIsDone(task, win, a) || isSelected(a)).length;
   box.innerHTML = `<div style="font-size:12px;color:var(--ink-soft);margin-bottom:4px">${pendN} sin agregar de ${targets.length} apto${targets.length===1?'':'s'} disponible${targets.length===1?'':'s'} hoy (con movimiento o libre):</div><div style="display:flex;flex-wrap:wrap">${chips}</div>`;
@@ -2157,8 +2169,8 @@ async function resolvePeriodForApto(task, hab){
     /* mantenimiento: el clic solo agrega/saca del parte de Diego. "hecho" lo marca \u00e9l, en su app */
     const o = mpState(); o.general = o.general || {};
     if (o.general[hab] === undefined) o.general[hab] = [];
-    const arr = o.general[hab]; const i = arr.indexOf(task.label);
-    if (i >= 0) arr.splice(i, 1); else arr.push(task.label);
+    const arr = o.general[hab];
+    if (arr.some(t => mantSameTask(t, task.label))) o.general[hab] = arr.filter(t => !mantSameTask(t, task.label)); else arr.push(task.label);
     saveMp(o);
     renderMantParte();
     publishMantParte();
@@ -3556,6 +3568,7 @@ function periodIsDone(task, win, target){
   const est = periodEstado(); const d = est[task.id] && est[task.id][target];
   if (!d) return false;
   if (!ctlIsISO(String(d).slice(0,10))) return false;   /* texto libre: no cuenta como fecha */
+  if (task.cat === 'mantenimiento' && mantMarcaDudosa(task.id, target, d)) return false;   /* se la asignaron ese día y Diego no la marcó: no está hecha */
   if (task.period && task.period.type === 'rolling'){
     /* vence N meses después de la fecha REAL en que se marcó (no del 1° del mes siguiente) */
     const marked = fromISO(d);
@@ -3584,16 +3597,102 @@ function periodUnsetDone(task, target){
 /* cuando Diego marca hecha (en su parte del día) una tarea que coincide con una de las periódicas
    de mantenimiento (por apto), lo reflejamos acá para que "Última vez por apartamento" quede al día
    y esa tarea deje de ofrecerse de nuevo sin necesidad */
-function syncPeriodFromCierre(label, hab, fecha){
+function syncPeriodFromCierre(label, hab, fecha, taskId){
   try{
-    const defs = periodDefs();
-    const task = defs.find(t => t.cat === 'mantenimiento' && t.scope === 'apto' && normDesc(t.label) === normDesc(label));
-    if (!task) return;
+    const id = taskId || mantTaskIdFor(label);
+    if (!id) return;
     const est = periodEstado();
-    const cur = est[task.id] && est[task.id][hab];
-    if (cur === fecha) return;   /* ya estaba sincronizado, no reescribimos de más */
-    periodSetDone(task, hab, fecha);
+    const cur = est[id] && est[id][hab];
+    if (!mantDebeActualizar(id, hab, cur, fecha)) return;
+    est[id] = est[id] || {}; est[id][hab] = fecha; savePeriodEstado(est);
   }catch(e){}
+}
+/* ===== tareas de mantenimiento asignadas a Diego que NO marcó como hechas =====
+   Se arma leyendo los partes (mant_parte) y lo que Diego marcó (mant_cierre) de los últimos 60 días.
+   - MANT_NOHECHA["id|apto"] = fechas en que se le asignó y no la marcó.
+   - MANT_PEND["id|apto"]    = la última de esas fechas (si después no la hizo): se muestra como "pendiente del dd/mm".
+   Una fecha en "Última vez" que coincide con un día en que se le asignó y NO la hizo se considera
+   dudosa: no cuenta como hecha (no se borra nada, queda en el historial). */
+var MANT_NOHECHA = {}, MANT_PEND = {}, MANT_HECHA = {};
+function mantNorm(s){
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter(w => w && !['de','del','la','el','los','las','y','limpiar','revisar'].includes(w));
+}
+function mantTaskIdFor(label){
+  const defs = periodDefs().filter(t => t.cat === 'mantenimiento' && t.scope === 'apto');
+  const exact = defs.find(t => normDesc(t.label) === normDesc(label)); if (exact) return exact.id;
+  const a = mantNorm(label); if (a.length < 2) return null;
+  const hit = defs.filter(t => { const b = mantNorm(t.label); if (b.length < 2) return false;
+    return a.length === b.length && a.every(w => b.includes(w)); });   /* mismas palabras (sin importar mayúsculas, tildes ni 'limpiar/de/y') */
+  return hit.length === 1 ? hit[0].id : null;
+}
+/* la misma tarea escrita distinto (ej. "FILTRO AC" de antes y "Filtro AC" de ahora) cuenta una sola vez */
+function mantSameTask(a, b){ if (normDesc(a) === normDesc(b)) return true; const ia = mantTaskIdFor(a); return !!ia && ia === mantTaskIdFor(b); }
+function mantDedupLabels(arr){ const out = []; (arr || []).forEach(l => { if (!out.some(o => mantSameTask(o, l))) out.push(l); }); return out; }
+function mantMarcaDudosa(id, hab, d){
+  const k = id + '|' + hab, f = String(d).slice(0,10);
+  return (MANT_NOHECHA[k] || []).includes(f) && !(MANT_HECHA[k] || []).includes(f);
+}
+function mantDebeActualizar(id, hab, cur, fecha){
+  if (!cur) return true;
+  if (!ctlIsISO(String(cur))) return false;            /* texto libre que cargaron a mano: no lo pisamos */
+  if (mantMarcaDudosa(id, hab, cur)) return true;      /* la fecha vieja era de un día que no la hizo */
+  return String(cur) < fecha;                          /* solo si es más nueva */
+}
+var _mantSyncRunning = false;
+async function syncMantDesdeDiego(){
+  if (!sb || _mantSyncRunning) return;
+  _mantSyncRunning = true;
+  try{
+    const desde = toISO(addDays(new Date(), -60));
+    const [rp, rc] = await Promise.all([
+      sb.from('mant_parte').select('fecha,data').gte('fecha', desde),
+      sb.from('mant_cierre').select('kind,hab,hecho,fecha').gte('fecha', desde).in('kind', ['mp_puntual','mp_general','mp_libre'])
+    ]);
+    if (rp.error || rc.error) return;
+    const hecho = new Set((rc.data || []).filter(c => c.hecho).map(c => c.fecha + '|' + c.kind + '|' + c.hab));
+    const noH = {}, siH = {}, ultHecha = {};
+    const grupos = [['puntual','mp_puntual'],['general','mp_general'],['libre','mp_libre']];
+    for (const row of (rp.data || [])){
+      const P = row.data || {}, f = row.fecha;
+      for (const [campo, kind] of grupos){
+        for (const x of (P[campo] || [])){
+          (x.tareas || []).forEach((label, i) => {
+            const id = (x.tareaIds && x.tareaIds[i]) || mantTaskIdFor(label); if (!id) return;
+            const k = id + '|' + x.hab;
+            if (hecho.has(f + '|' + kind + '|' + x.hab + '§' + label)){
+              (siH[k] = siH[k] || []).push(f);
+              if (!ultHecha[k] || ultHecha[k] < f) ultHecha[k] = f;
+            } else (noH[k] = noH[k] || []).push(f);
+          });
+        }
+      }
+    }
+    MANT_NOHECHA = noH; MANT_HECHA = siH;
+    /* "Última vez" se completa solo con lo que Diego marcó de verdad */
+    const est = periodEstado(); let cambio = false;
+    for (const [k, f] of Object.entries(ultHecha)){
+      const [id, hab] = k.split('|');
+      if (mantDebeActualizar(id, hab, est[id] && est[id][hab], f)){ est[id] = est[id] || {}; est[id][hab] = f; cambio = true; }
+    }
+    if (cambio) savePeriodEstado(est);
+    /* pendientes: asignada y no hecha, sin que la haya hecho después */
+    const pend = {};
+    for (const [k, fs] of Object.entries(noH)){
+      const ult = fs.slice().sort().pop();
+      if (!ultHecha[k] || ultHecha[k] < ult) pend[k] = ult;
+    }
+    MANT_PEND = pend;
+    mantRefrescarVistas();
+  }catch(e){}
+  finally{ _mantSyncRunning = false; }
+}
+function mantRefrescarVistas(){
+  try{ for (const t of periodDefs()) if (document.getElementById('ptrack-' + t.id)) renderPeriodTracker(t); }catch(e){}
+}
+function mantPendTag(id, hab){
+  const f = id && MANT_PEND[id + '|' + hab]; if (!f) return '';
+  return f.split('-').reverse().slice(0,2).join('/');
 }
 /* tareas de mantenimiento (por apto) pendientes hoy, para un apartamento concreto */
 function pendingPeriodTasks(cat, day, target){
@@ -4791,6 +4890,7 @@ $('btnBaseNube').addEventListener('click', async () => {
 (async function boot(){
   respaldoLocalDiario();   /* ANTES de bajar lo de la nube: guarda la copia local del día */
   const sincronizado = await sbHydrate();   /* bajamos lo compartido (true si Supabase no está configurado, o si bajó bien) */
+  try{ await syncMantDesdeDiego(); }catch(e){}   /* 'Última vez' de mantenimiento según lo que Diego marcó de verdad */
   bootDone = true;
   loadState();
   if (heredarInHouse()){ renderCal(); renderHoy(); }   /* si la app abre parada en un día sin In House propio */
@@ -4843,7 +4943,7 @@ window.addEventListener('appinstalled', () => {
   }
   function typing(){ var a = document.activeElement; return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); }
   function show(){
-    if (document.hidden && !typing()){ location.reload(); return; }
+    if (document.hidden && !typing() && !recienRecargada()){ try{ sessionStorage.setItem(RK, String(Date.now())); }catch(e){} location.reload(); return; }
     if (banner) return;
     banner = document.createElement('div');
     banner.style.cssText = 'position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:99999;background:#14323b;color:#fff;border-radius:12px;padding:10px 14px;font:600 14px system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.3);display:flex;gap:12px;align-items:center;max-width:92vw';
@@ -4851,10 +4951,15 @@ window.addEventListener('appinstalled', () => {
     banner.querySelector('button').onclick = function(){ location.reload(); };
     document.body.appendChild(banner);
   }
+  /* base = la versión que hay publicada al abrir (siempre pedida sin caché: antes se comparaba con una copia
+     vieja del navegador y la pestaña se recargaba sola sin parar, saturando la base de datos).
+     Además, nunca se recarga sola más de una vez cada 30 minutos. */
+  var RK = 'art-autoreload-at';
+  function recienRecargada(){ try{ return Date.now() - (+sessionStorage.getItem(RK) || 0) < 30*60*1000; }catch(e){ return true; } }
   async function check(){
     try{
-      if (base === null){ var t0 = await get(false); if (t0) base = hash(t0); }
-      var t = await get(true); if (!t || base === null) return;
+      if (base === null){ var t0 = await get(true); if (t0) base = hash(t0); return; }
+      var t = await get(true); if (!t) return;
       if (hash(t) !== base) show();
     }catch(e){}
   }
