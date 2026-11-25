@@ -1622,13 +1622,13 @@ function mantParteSnapshot(){
   const der = mantDerive(); const mp = mpState(); const hid = new Set(mp.hidden || []);
   const manHabs = new Set(Object.keys((mp.manual && mp.manual.porApto) || {}));
   const puntual = der.puntual.filter(x => !hid.has('puntual|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, huesped:x.huesped, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x), tareaIds:genSel(mp, x).map(l => mantTaskIdFor(l) || '') }))
+    .map(x => ({ hab:x.hab, huesped:x.huesped, nota:(mp.notas[x.hab] || ''), tareas:mantDedupLabels(genSel(mp, x)), tareaIds:mantDedupLabels(genSel(mp, x)).map(l => mantTaskIdFor(l) || '') }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const general = der.general.filter(x => !hid.has('general|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x), tareaIds:genSel(mp, x).map(l => mantTaskIdFor(l) || '') }))
+    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:mantDedupLabels(genSel(mp, x)), tareaIds:mantDedupLabels(genSel(mp, x)).map(l => mantTaskIdFor(l) || '') }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const libre = (der.libre || []).filter(x => !hid.has('libre|'+x.hab) && !manHabs.has(x.hab))
-    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:genSel(mp, x), tareaIds:genSel(mp, x).map(l => mantTaskIdFor(l) || '') }))
+    .map(x => ({ hab:x.hab, nota:(mp.notas[x.hab] || ''), tareas:mantDedupLabels(genSel(mp, x)), tareaIds:mantDedupLabels(genSel(mp, x)).map(l => mantTaskIdFor(l) || '') }))
     .filter(x => x.nota.trim() || x.tareas.length);
   const extras = (mp.extras || []).slice();
   const man = mp.manual || { shared:[], porApto:{} };
@@ -1649,8 +1649,8 @@ function publishMantParte(force){
 /* ================= PARTE DIARIO DE MANTENIMIENTO ================= */
 function mpChipsHtml(x, sel){
   /* se ofrecen las preventivas pendientes del apto; al tocar una se agrega al parte (verde) o se saca */
-  const all = []; (x.pend || []).forEach(t => { if (!all.includes(t)) all.push(t); }); (sel || []).forEach(t => { if (!all.includes(t)) all.push(t); });
-  return all.map(t => { const on = (sel || []).includes(t);
+  const all = []; const selD = mantDedupLabels(sel); (x.pend || []).forEach(t => { const yaSel = selD.find(s2 => mantSameTask(s2, t)); const u = yaSel || t; if (!all.some(a => mantSameTask(a, u))) all.push(u); }); selD.forEach(t => { if (!all.some(a => mantSameTask(a, t))) all.push(t); });
+  return all.map(t => { const on = (sel || []).some(s2 => mantSameTask(s2, t));
     const pf = on ? '' : mantPendTag(mantTaskIdFor(t), x.hab);   /* asignada otro día y Diego no la hizo */
     const bd = on ? '#bfe6cd' : (pf ? '#eccb8f' : '#e4dfd4'), bg = on ? '#e7f5ec' : (pf ? '#fdf0d9' : '#f4f1ea'), co = on ? '#128a4a' : (pf ? '#8a5a10' : '#6b655a');
     return `<button class="mp-gen" data-hab="${esc(x.hab)}" data-task="${esc(t)}" style="border:1px solid ${bd};background:${bg};color:${co};border-radius:999px;padding:3px 9px;margin:2px;font-size:12px;font-weight:600;cursor:pointer">${on ? '\u2713 ' : '+ '}${esc(t)}${pf ? ' \u00b7 pendiente del ' + pf : ''}</button>`; }).join('');
@@ -1815,8 +1815,8 @@ function renderMantParte(){
   box.querySelectorAll('.mp-gen').forEach(btn => btn.addEventListener('click', () => {
     const o=mpState(); const hab=btn.dataset.hab, task=btn.dataset.task;
     if (o.general[hab] === undefined){ const d = mantDerive().general.find(g => g.hab === hab); o.general[hab] = []; }
-    const arr = o.general[hab]; const i = arr.indexOf(task);
-    if (i>=0) arr.splice(i,1); else arr.push(task);
+    const arr = o.general[hab];
+    if (arr.some(t => mantSameTask(t, task))) o.general[hab] = arr.filter(t => !mantSameTask(t, task)); else arr.push(task);
     saveMp(o); rep();
   }));
   box.querySelectorAll('.mp-del').forEach(btn => btn.addEventListener('click', (ev) => { ev.preventDefault(); ev.stopPropagation();
@@ -2141,7 +2141,7 @@ function renderPeriodTracker(task){
     : tipo === 'libre'
     ? '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#e6eefc;color:#2c5db0;margin-left:4px">LIBRE</span>'
     : '<span style="font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;background:#e3f4ea;color:#1E8C4E;margin-left:4px">VAC\u00cdO</span>';
-  const isSelectedMant = (a) => { const o = mpState(); return !!(o.general && o.general[a] && o.general[a].includes(task.label)); };
+  const isSelectedMant = (a) => { const o = mpState(); return !!(o.general && o.general[a] && o.general[a].some(t => mantSameTask(t, task.label))); };
   const isSelected = (a) => task.cat === 'limpieza' ? isFondoSelected(task.id, a) : isSelectedMant(a);
   const chips = targets.map(({hab:a, tipo}) => {
     const done = periodIsDone(task, win, a);   /* esto ya solo se activa cuando Diego/ella lo marcaron hecho de verdad */
@@ -2167,8 +2167,8 @@ async function resolvePeriodForApto(task, hab){
     /* mantenimiento: el clic solo agrega/saca del parte de Diego. "hecho" lo marca \u00e9l, en su app */
     const o = mpState(); o.general = o.general || {};
     if (o.general[hab] === undefined) o.general[hab] = [];
-    const arr = o.general[hab]; const i = arr.indexOf(task.label);
-    if (i >= 0) arr.splice(i, 1); else arr.push(task.label);
+    const arr = o.general[hab];
+    if (arr.some(t => mantSameTask(t, task.label))) o.general[hab] = arr.filter(t => !mantSameTask(t, task.label)); else arr.push(task.label);
     saveMp(o);
     renderMantParte();
     publishMantParte();
@@ -3624,6 +3624,9 @@ function mantTaskIdFor(label){
     return a.length === b.length && a.every(w => b.includes(w)); });   /* mismas palabras (sin importar mayúsculas, tildes ni 'limpiar/de/y') */
   return hit.length === 1 ? hit[0].id : null;
 }
+/* la misma tarea escrita distinto (ej. "FILTRO AC" de antes y "Filtro AC" de ahora) cuenta una sola vez */
+function mantSameTask(a, b){ if (normDesc(a) === normDesc(b)) return true; const ia = mantTaskIdFor(a); return !!ia && ia === mantTaskIdFor(b); }
+function mantDedupLabels(arr){ const out = []; (arr || []).forEach(l => { if (!out.some(o => mantSameTask(o, l))) out.push(l); }); return out; }
 function mantMarcaDudosa(id, hab, d){
   const k = id + '|' + hab, f = String(d).slice(0,10);
   return (MANT_NOHECHA[k] || []).includes(f) && !(MANT_HECHA[k] || []).includes(f);
